@@ -180,7 +180,7 @@ function WorkspaceModuleRouter({ moduleId }: { moduleId: string }) {
         case "daily-work": return <DailyWork />;
         case "customer-desk": return <CustomerDesk />;
         case "customer-work-required": return <CustomerWorkRequiredWorkspace filterPresets={route.filterPresets} />;
-        case "site-execution": return <SiteExecutionModule initialTab={route.filter?.tab}/>;
+        case "site-execution": return <SiteExecutionModule/>;
         case "tasks": return <TasksFollowups moduleId={activeModuleId} submoduleFilter={route.filter} filterPresets={route.filterPresets} dataSource={route.dataSource}/>;
         case "quotations": return <QuotationWorkspaceModule filterPresets={route.filterPresets} statusFilter={route.filter?.status} view={route.filter?.view}/>;
         case "boq": return <BOQModule />;

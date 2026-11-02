@@ -11,6 +11,7 @@ import {
   Plus,
   ReceiptText,
   Ruler,
+  Search,
   ShoppingCart,
   Users,
   Wrench,
@@ -116,7 +117,58 @@ const workStatusStyle: Record<string, string> = {
  * but it deliberately does not create Areas, Work Required lines or quotation
  * payloads by itself.
  */
-export function SiteExecutionModule({ initialTab }: { initialTab?: string }) {
+export function SiteExecutionModule() {
+  const db = useRDashStore((state) => state.db);
+  const openDetail = useRDashStore((state) => state.openDetail);
+  const detail = useRDashStore((state) => state.detailPanel);
+  const [query, setQuery] = React.useState("");
+  const [sort, setSort] = React.useState("newest");
+  const [filter, setFilter] = React.useState("all");
+  const [newSiteOpen, setNewSiteOpen] = React.useState(false);
+  const activeSites = db.sites.filter((site) => !site.is_archived);
+  const filtered = activeSites.filter((site) => {
+    const customer = db.customers.find((row) => row.id === site.customer_id);
+    return (filter === "all" || site.stage === filter)
+      && [site.name, customer?.name, site.address, site.locality, site.city].join(" ").toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
+  }).sort((a, b) => sort === "name-asc" ? a.name.localeCompare(b.name)
+    : sort === "name-desc" ? b.name.localeCompare(a.name)
+      : sort === "oldest" ? a.created_at.localeCompare(b.created_at) : b.created_at.localeCompare(a.created_at));
+
+  return <div className="flex flex-col gap-3">
+    <div className="flex items-center gap-2 rounded-[var(--panel-radius)] border border-border bg-card p-3 shadow-card">
+      <div className="relative min-w-0 flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input aria-label="Search sites" placeholder="Search site, customer or location" value={query} onChange={(event) => setQuery(event.target.value)} className="pl-9" /></div>
+      <Button onClick={() => setNewSiteOpen(true)}><Plus className="mr-1.5 h-4 w-4" />Add site</Button>
+    </div>
+    <div className="rd-metric-grid">
+      <MetricCard label="Sites" value={filtered.length} hint={query || filter !== "all" ? "matching filters" : "visible now"} />
+      <MetricCard label="In execution" value={activeSites.filter((site) => site.stage === "execution").length} tone="primary" />
+      <MetricCard label="Completed" value={activeSites.filter((site) => site.stage === "completed").length} tone="success" />
+    </div>
+    <SectionHeader title="Customer Sites" count={filtered.length} action={<div className="flex flex-wrap items-center gap-2">
+      <select aria-label="Sort sites" value={sort} onChange={(event) => setSort(event.target.value)} className="h-8 rounded-md border border-input bg-card px-2 text-xs">
+        <option value="newest">Sort: Newest first</option><option value="name-asc">Name: A–Z</option><option value="name-desc">Name: Z–A</option><option value="oldest">Oldest first</option>
+      </select>
+      <select aria-label="Filter sites" value={filter} onChange={(event) => setFilter(event.target.value)} className="h-8 rounded-md border border-input bg-card px-2 text-xs">
+        <option value="all">Filter: All</option>{Object.keys(siteStageStyle).map((stage) => <option key={stage} value={stage}>{titleFromType(stage)}</option>)}
+      </select>
+    </div>} />
+    <div className="grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3">
+      {filtered.map((site) => {
+        const customer = db.customers.find((row) => row.id === site.customer_id);
+        return <button key={site.id} type="button" onClick={() => openDetail("site", site.id, "siteExecution")} className={cn("min-w-0 rounded-[var(--panel-radius)] border border-border bg-card p-3 text-left shadow-card transition-colors hover:border-primary/30 hover:bg-muted/30", detail.kind === "site" && detail.recordId === site.id && "ring-2 ring-ring/40")}>
+          <div className="flex items-start justify-between gap-2"><p className="min-w-0 break-words text-sm font-bold">{site.name}</p><StatusBadge label={site.stage} className={cn("shrink-0", siteStageStyle[site.stage])} /></div>
+          <p className="mt-1 break-words text-xs text-muted-foreground">{customer?.name || "Unknown Customer"} · {titleFromType(site.site_type)}</p>
+          <p className="mt-2 flex items-start gap-1 text-xs text-muted-foreground"><MapPin className="mt-0.5 h-3 w-3 shrink-0" /><span className="min-w-0 break-words">{site.locality || site.address || site.city || "Location pending"}</span></p>
+          <p className="mt-3 text-xs text-muted-foreground">{db.areas.filter((area) => area.site_id === site.id && !area.is_archived).length} areas · {db.workRequired.filter((work) => work.site_id === site.id).length} work required · {db.quotations.filter((quote) => quote.site_id === site.id).length} quotations</p>
+        </button>;
+      })}
+    </div>
+    {!filtered.length && <EmptyState title={activeSites.length ? "No matching sites" : "Create the first site"} description={activeSites.length ? "Try a different search or filter." : "Add a customer site to start defining areas and work."} />}
+    <CustomerSitesDialog open={newSiteOpen} autoAddSite onClose={() => setNewSiteOpen(false)} />
+  </div>;
+}
+
+export function SiteExecutionWorkspace({ siteId, initialTab }: { siteId: string; initialTab?: string }) {
   const db = useRDashStore((state) => state.db);
   const openQuotationAcceptanceDialog = useRDashStore((state) => state.openQuotationAcceptanceDialog);
   const addContractorBid = useRDashStore((state) => state.addContractorBid);
@@ -132,11 +184,9 @@ export function SiteExecutionModule({ initialTab }: { initialTab?: string }) {
   const openCreateDialog = useRDashStore((state) => state.openCreateDialog);
   const openDetail = useRDashStore((state) => state.openDetail);
 
-  const activeSites = db.sites.filter((site) => !site.is_archived);
-  const [selectedSiteId, setSelectedSiteId] = React.useState(() => activeSites[0]?.id || "");
+  const selectedSiteId = siteId;
   const [tab, setTab] = React.useState<TabId>(() => isTabId(initialTab) ? initialTab : "overview");
   const { stripRef, bindActiveTab } = useActiveTabScroll(tab);
-  const [newSiteOpen, setNewSiteOpen] = React.useState(false);
   const [editSiteOpen, setEditSiteOpen] = React.useState(false);
   const [newWorkOpen, setNewWorkOpen] = React.useState(false);
   const [newWorkAreaId, setNewWorkAreaId] = React.useState<string | null>(null);
@@ -162,12 +212,9 @@ export function SiteExecutionModule({ initialTab }: { initialTab?: string }) {
   const [vendorBidRates, setVendorBidRates] = React.useState<Record<string, string>>({});
   const [vendorBidDeliveryDays, setVendorBidDeliveryDays] = React.useState("");
 
-  React.useEffect(() => {
-    if (!selectedSiteId || !activeSites.some((site) => site.id === selectedSiteId)) setSelectedSiteId(activeSites[0]?.id || "");
-  }, [activeSites, selectedSiteId]);
   React.useEffect(() => { if (isTabId(initialTab)) setTab(initialTab); }, [initialTab]);
 
-  const selectedSite = activeSites.find((site) => site.id === selectedSiteId);
+  const selectedSite = db.sites.find((site) => site.id === selectedSiteId && !site.is_archived);
   const selectedCustomer = db.customers.find((customer) => customer.id === selectedSite?.customer_id);
   const areas = db.areas.filter((area) => area.site_id === selectedSiteId && !area.is_archived);
   const workRequired = db.workRequired.filter((work) => work.site_id === selectedSiteId);
@@ -445,29 +492,12 @@ export function SiteExecutionModule({ initialTab }: { initialTab?: string }) {
   };
 
   if (!selectedSite) {
-    return <>
-      <EmptyState icon={<Building2 className="h-6 w-6" />} title="Create the first site" description="Sites are Customer-owned operating contexts for Areas, Work Required, quotations and execution." action={<Button onClick={() => setNewSiteOpen(true)}><Plus className="mr-1.5 h-4 w-4" />Add Customer & Site</Button>} />
-      <CustomerSitesDialog open={newSiteOpen} autoAddSite onClose={() => setNewSiteOpen(false)} />
-    </>;
+    return <EmptyState title="Site unavailable" description="This site may have been archived or removed." />;
   }
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 xl:grid-cols-[270px_minmax(0,1fr)]">
-        <aside className="rounded-[var(--panel-radius)] border border-border bg-card p-3 shadow-card">
-          <div className="mb-3 flex items-center justify-between gap-2"><div><p className="text-sm font-bold">Customer Sites</p><p className="text-xs text-muted-foreground">Same Customer Site records used everywhere</p></div><Button size="icon" variant="outline" onClick={() => setNewSiteOpen(true)} aria-label="Add site"><Plus className="h-4 w-4" /></Button></div>
-          <div className="space-y-2">
-            {activeSites.map((site) => {
-              const customer = db.customers.find((row) => row.id === site.customer_id);
-              return <button key={site.id} type="button" onClick={() => { setSelectedSiteId(site.id); openDetail("site", site.id, "siteExecution"); }} className={cn("w-full rounded-lg border p-3 text-left transition-colors", selectedSiteId === site.id ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50")}>
-                <div className="flex items-start justify-between gap-2"><p className="min-w-0 text-sm font-semibold leading-snug line-clamp-2">{site.name}</p><StatusBadge label={site.stage} className={cn("shrink-0", siteStageStyle[site.stage])} /></div>
-                <p className="mt-1 truncate text-xs text-muted-foreground">{customer?.name || "Unknown Customer"} · {titleFromType(site.site_type)}</p>
-                {site.locality && <p className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground"><MapPin className="h-3 w-3" />{site.locality}</p>}
-              </button>;
-            })}
-          </div>
-        </aside>
-
+      <div>
         <section className="min-w-0 space-y-4">
           <div className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
             <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{selectedCustomer?.name || "Customer"} · {titleFromType(selectedSite.site_type)}</p><h1 className="mt-1 text-xl font-bold">{selectedSite.name}</h1><p className="mt-1 max-w-3xl text-sm text-muted-foreground">{selectedSite.address || selectedSite.notes || "Define Area and Work Required through the Customer workflow before quoting."}</p></div><div className="flex items-center gap-2"><Button size="sm" variant="outline" onClick={() => setEditSiteOpen(true)}>Edit site profile</Button><StatusBadge label={selectedSite.stage} className={siteStageStyle[selectedSite.stage]} /></div></div>
@@ -518,7 +548,6 @@ export function SiteExecutionModule({ initialTab }: { initialTab?: string }) {
         </section>
       </div>
 
-      <CustomerSitesDialog open={newSiteOpen} autoAddSite onClose={() => setNewSiteOpen(false)} />
       <CustomerSitesDialog editId={selectedSite.customer_id} open={editSiteOpen} expandSiteId={selectedSite.id} onClose={() => setEditSiteOpen(false)} />
       {newWorkOpen && <WorkRequiredCreateDialog open customerId={selectedSite.customer_id} site={selectedSite} initialAreaIds={newWorkAreaId ? [newWorkAreaId] : []} onOpenChange={(next) => { if (!next) { setNewWorkOpen(false); setNewWorkAreaId(null); } }} onCreated={(id) => setCaptureWorkId(id)} />}
       {captureWorkId && (() => { const work = workRequired.find((row) => row.id === captureWorkId); return work ? <CustomerWorkCaptureDialog workRequired={work} site={selectedSite} areas={areas} onClose={() => setCaptureWorkId(null)} /> : null; })()}

@@ -35,6 +35,7 @@ import { resolveRenderer } from "@/lib/rdash/modules";
 import { resolveThreadRecordEntityId, resolveThreadRecordEntityType } from "@/lib/rdash/entity-context";
 import { normalizeAttendancePolicy } from "@/lib/rdash/attendance-policy";
 type Tab = "overview" | "thread";
+const SiteExecutionWorkspace = React.lazy(() => import("./modules/SiteExecutionModule").then((module) => ({ default: module.SiteExecutionWorkspace })));
 export function DetailPanel() {
     const detail = useRDashStore((s) => s.detailPanel);
     const closeDetail = useRDashStore((s) => s.closeDetail);
@@ -93,7 +94,7 @@ export function DetailPanel() {
     const activeTab: Tab = detail.kind === "customer" ? "overview" : tab;
     return (<>
       <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px] animate-in fade-in duration-150" onClick={closeDetail}/>
-      <aside ref={asideRef} role="dialog" aria-modal="true" tabIndex={-1} onKeyDown={onAsideKeyDown} aria-label="Record context panel" className={cn("fixed right-0 top-0 z-50 flex h-dvh w-full max-w-[640px] flex-col border-l border-border bg-card shadow-2xl outline-none animate-in slide-in-from-right duration-200", detail.kind === "quotation" && activeTab === "overview" && "quotation-print-surface")}>
+      <aside ref={asideRef} role="dialog" aria-modal="true" tabIndex={-1} onKeyDown={onAsideKeyDown} aria-label="Record context panel" className={cn("fixed right-0 top-0 z-50 flex h-dvh w-full md:w-3/4 flex-col border-l border-border bg-card shadow-2xl outline-none animate-in slide-in-from-right duration-200", detail.kind === "quotation" && activeTab === "overview" && "quotation-print-surface")}>
         <PanelHeader tab={activeTab} setTab={setPanelTab}/>
         <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden rd-scroll">
           {activeTab === "overview" && <OverviewBody kind={detail.kind} id={detail.recordId}/>}
@@ -939,7 +940,7 @@ function QuotationOverview({ q }: {
             <div className="flex min-w-0 items-start gap-3"><Avatar name={(q.customer_name || "Customer")} size={42}/><div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Prepared for</p><p className="truncate text-base font-bold">{q.customer_name || "Customer"}</p><p className="mt-0.5 text-xs text-muted-foreground">{site?.name || "Customer-level quotation"}</p></div></div>
             <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs sm:border-l sm:border-border sm:pl-3"><div><dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Issued</dt><dd className="mt-0.5 font-medium">{formatDate(q.created_at)}</dd></div><div><dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Valid until</dt><dd className="mt-0.5 font-medium">{formatDate(q.valid_until)}</dd></div><div><dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Revision</dt><dd className="mt-0.5 font-medium">{q.revision_no}</dd></div><div><dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Scope lines</dt><dd className="mt-0.5 font-medium">{q.scope_lines.length}</dd></div></dl>
           </section>
-          <section><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Project proposal</p><h2 className="mt-1 whitespace-pre-wrap break-words text-base font-bold leading-relaxed text-foreground">{spacedQuotationTitle(q.title, db)}</h2>{q.parent_quotation_id && <p className="mt-1 text-[11px] text-muted-foreground">Revision of {db.quotations.find((x) => x.id === q.parent_quotation_id)?.quotation_no || "earlier quotation"}</p>}</section>
+          <section><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Project proposal</p><h2 className="mt-1 grid grid-cols-2 gap-y-2 text-base font-bold leading-relaxed text-foreground">{spacedQuotationTitle(q.title, db).split(/ {6,}/).filter(Boolean).map((title, index) => <span key={index} className="min-w-0 whitespace-normal break-words pr-4">{title}</span>)}</h2>{q.parent_quotation_id && <p className="mt-1 text-[11px] text-muted-foreground">Revision of {db.quotations.find((x) => x.id === q.parent_quotation_id)?.quotation_no || "earlier quotation"}</p>}</section>
       <section className="quotation-scope-section overflow-hidden rounded-lg border border-border">
         <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/40 px-3 py-2"><div><p className="text-xs font-bold">Scope & pricing</p><p className="text-[10px] text-muted-foreground">Room-wise measured quantities and agreed rates</p></div><div className="no-print flex items-center gap-2">{isEditable && <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-[10px]" onClick={() => void addExtraColumn()}><Plus className="mr-1 h-3 w-3"/>Add work column</Button>}{isEditable && <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">Draft · editable</span>}</div></div>
         {isEditable ? <div className="no-print"><QuotationLineItemEditor quotationId={q.id} items={q.scope_lines} articles={db.master.articles}/></div> : null}
@@ -1358,8 +1359,8 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                 return (<div className="col-start-1 row-start-3 flex min-w-0 flex-col items-stretch gap-0.5 rounded px-1 py-0.5 font-mono sm:col-span-1 sm:col-start-2 sm:row-start-1">
                   {pairBoxes.map((box, index) => (<div key={index} className={cn("flex items-center justify-end gap-0.5 rounded border border-transparent hover:border-border focus-within:border-primary focus-within:bg-card", box.primary ? "text-foreground" : "text-muted-foreground")}>
                     <span aria-hidden className="text-[10px] font-semibold">₹</span>
-                    <input type="number" defaultValue={box.rate ?? ""} placeholder="—" min="0" step="1" aria-label={`Rate for ${box.label}${box.primary ? " (drives this line)" : ""}`} onBlur={(e) => { const v = parseFloat(e.target.value); if (isNaN(v) || v === box.rate)
-                    return; const nextPairs = (it.option_pairs || []).map((p, pi) => pi === index ? { ...p, rate: v } : p); updateQuotationItem(quotationId, it.id, box.primary ? { option_pairs: nextPairs, rate: v } : { option_pairs: nextPairs }); }} className="min-w-0 w-[3.75rem] bg-transparent text-right outline-none"/>
+                    <input type="number" defaultValue={box.rate ?? ""} style={{ width: `${Math.max(1, String(box.rate ?? "").length)}ch` }} onInput={(event) => { event.currentTarget.style.width = `${Math.max(1, event.currentTarget.value.length)}ch`; }} placeholder="—" min="0" step="1" aria-label={`Rate for ${box.label}${box.primary ? " (drives this line)" : ""}`} onBlur={(e) => { const v = parseFloat(e.target.value); if (isNaN(v) || v === box.rate)
+                    return; const nextPairs = (it.option_pairs || []).map((p, pi) => pi === index ? { ...p, rate: v } : p); updateQuotationItem(quotationId, it.id, box.primary ? { option_pairs: nextPairs, rate: v } : { option_pairs: nextPairs }); }} className="min-w-0 max-w-full bg-transparent p-0 text-right outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"/>
                   </div>))}
                 </div>);
             })()}
@@ -1367,8 +1368,8 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                 if (it.option_pairs?.length) return null;
                 return (<div className="col-start-1 row-start-3 flex min-w-0 items-center justify-end gap-0.5 rounded border border-transparent bg-transparent px-0.5 py-0.5 font-mono text-muted-foreground hover:border-border focus-within:border-primary focus-within:bg-card focus-within:text-foreground sm:col-start-2 sm:row-start-1">
                   <span aria-hidden className="text-[10px] font-semibold">₹</span>
-                  <input type="number" defaultValue={it.rate} aria-label="Rate" min="0" step="1" onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== it.rate)
-                updateQuotationItem(quotationId, it.id, { rate: v }); }} className="min-w-0 w-[3.75rem] bg-transparent text-right outline-none"/>
+                  <input type="number" defaultValue={it.rate} style={{ width: `${Math.max(1, String(it.rate).length)}ch` }} onInput={(event) => { event.currentTarget.style.width = `${Math.max(1, event.currentTarget.value.length)}ch`; }} aria-label="Rate" min="0" step="1" onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== it.rate)
+                updateQuotationItem(quotationId, it.id, { rate: v }); }} className="min-w-0 max-w-full bg-transparent p-0 text-right outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"/>
                 </div>);
             })()}
             {(() => {
@@ -2398,7 +2399,6 @@ function SiteOverview({ site }: {
 }) {
     const db = useRDashStore((s) => s.db);
     const openDetail = useRDashStore((s) => s.openDetail);
-    const setActiveModule = useRDashStore((s) => s.setActiveModule);
     const archiveSite = useRDashStore((s) => s.archiveSite);
     const [archiveOpen, setArchiveOpen] = React.useState(false);
     const [archiveReason, setArchiveReason] = React.useState("");
@@ -2410,6 +2410,8 @@ function SiteOverview({ site }: {
     const workOrders = db.workOrders.filter((order) => order.site_id === site.id);
     const verifiedMeasurements = db.measurementRevisions.filter((revision) => revision.site_id === site.id && revision.status === "verified");
     return (<div className="h-full overflow-y-auto p-4">
+      {!site.is_archived && <React.Suspense fallback={<p className="text-sm text-muted-foreground">Loading site workspace…</p>}><SiteExecutionWorkspace key={site.id} siteId={site.id} /></React.Suspense>}
+      {site.is_archived && <>
       <div className="flex flex-wrap items-center gap-2">
         <StatusPill label={titleCase(site.stage)} tone={site.stage === "completed" ? "success" : site.stage === "on_hold" ? "destructive" : "default"}/>
         <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-semibold">{titleCase(site.site_type)}</span>
@@ -2419,9 +2421,9 @@ function SiteOverview({ site }: {
         <MetricMini label="Work required" value={works.length}/>
         <MetricMini label="Work orders" value={workOrders.length}/>
       </div>
+      </>}
       <div className="mt-4 flex flex-wrap gap-2">
         {customer && <Button size="sm" variant="outline" onClick={() => openDetail("customer", customer.id)}><User className="mr-1.5 h-3.5 w-3.5"/> Customer</Button>}
-        {!site.is_archived && <Button size="sm" onClick={() => setActiveModule("siteExecution")}><Building2 className="mr-1.5 h-3.5 w-3.5"/> Open site workspace</Button>}
         {!site.is_archived && <Button size="sm" variant="outline" onClick={() => setArchiveOpen(true)}><Trash2 className="mr-1.5 h-3.5 w-3.5"/> Archive Site</Button>}
       </div>
       <Dialog open={archiveOpen} onOpenChange={setArchiveOpen}>
@@ -2452,6 +2454,7 @@ function SiteOverview({ site }: {
         <Field label="Measurement snapshots" value={`${verifiedMeasurements.length} verified`}/>
       </div>
       <EntityFilesCard entityType="site" entityId={site.id} title="Site photos & files" />
+      {site.is_archived && <>
       <ContextSection title={`Areas (${areas.length})`}>
         {areas.length ? areas.map((area) => {
             const revision = [...db.measurementRevisions].filter((row) => row.area_id === area.id && row.status === "verified").sort((a, b) => b.revision_no - a.revision_no)[0];
@@ -2464,6 +2467,7 @@ function SiteOverview({ site }: {
       <ContextSection title={`Quotations (${quotes.length})`}>
         {quotes.length ? quotes.map((quote) => <LinkedRow key={quote.id} icon={<FileText className="h-3.5 w-3.5"/>} label={quote.quotation_no} value={`${titleCase(quote.status)} · ${formatINRShort(quote.total_amount)}`} onClick={() => openDetail("quotation", quote.id)}/>) : <EmptyContext label="Create quotations only after covered areas have verified measurements."/>}
       </ContextSection>
+      </>}
     </div>);
 }
 function AreaOverview({ area }: {

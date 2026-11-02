@@ -35,7 +35,9 @@ test("individual types from one combined requirement control rooms and prices in
     work_subcategory_ids: works.flatMap((work) => work.work_subcategory_ids), work_type_ids: works.flatMap((work) => work.work_type_ids),
     structured_items: works.flatMap((work) => work.structured_items.map((item) => ({ ...item, work_required_id: works[0].id }))) };
   await insert("workRequired", [combinedWork]);
-  await insert("measurementRevisions", [bedroom, living].map((areaId) => ({ id: `measurement-${combinedWork.id}-${areaId}`, site_id: siteId, work_required_id: combinedWork.id, area_id: areaId, revision_no: 1, status: "verified", captured_at: now, captured_by: "QA" })));
+  // Only the quoted room is verified; the other room can be cleared later
+  // without orphaning a verified measurement retained in the workspace.
+  await insert("measurementRevisions", [bedroom].map((areaId) => ({ id: `measurement-${combinedWork.id}-${areaId}`, site_id: siteId, work_required_id: combinedWork.id, area_id: areaId, revision_no: 1, status: "verified", captured_at: now, captured_by: "QA" })));
 
   const openCustomerQuotations = async () => {
     await page.goto("/workspace/customers");
@@ -85,7 +87,27 @@ test("individual types from one combined requirement control rooms and prices in
     const qty = await page.getByLabel("Quantity (sum of areas)").first().boundingBox();
     expect(rate!.x + rate!.width).toBeLessThan(qty!.x);
     expect(Math.abs(rate!.y - qty!.y)).toBeLessThan(2);
-    expect(rate!.width).toBeGreaterThan(50);
+    // A short number must not leave a fixed-width blank between ₹ and its digits.
+    const rateInput = page.getByRole("spinbutton", { name: "Rate", exact: true }).first();
+    const digitWidth = await rateInput.evaluate((input) => {
+      const style = getComputedStyle(input);
+      const text = document.createElement("span");
+      text.textContent = (input as HTMLInputElement).value;
+      Object.assign(text.style, { position: "absolute", whiteSpace: "pre", fontFamily: style.fontFamily, fontSize: style.fontSize, fontWeight: style.fontWeight, letterSpacing: style.letterSpacing });
+      input.parentElement!.appendChild(text);
+      const width = text.getBoundingClientRect().width;
+      text.remove();
+      return width;
+    });
+    expect(Math.abs(rate!.width - digitWidth)).toBeLessThan(2);
+    const panelBox = await page.getByRole("dialog", { name: "Record context panel" }).boundingBox();
+    expect(panelBox!.width).toBeGreaterThanOrEqual(width * 0.75);
+    const proposal = page.locator(".quotation-print-document h2").first();
+    const columns = await proposal.locator(":scope > span").all();
+    expect(columns.length).toBeGreaterThanOrEqual(2);
+    const headingBox = await proposal.boundingBox();
+    const secondColumn = await columns[1].boundingBox();
+    expect(Math.abs(secondColumn!.x - (headingBox!.x + headingBox!.width / 2))).toBeLessThan(2);
     const calculationGaps = await page.evaluate(() => {
       const rateInput = document.querySelector<HTMLInputElement>('input[aria-label="Rate"]')!;
       const quantityInput = document.querySelector<HTMLInputElement>('input[aria-label="Quantity (sum of areas)"]')!;
