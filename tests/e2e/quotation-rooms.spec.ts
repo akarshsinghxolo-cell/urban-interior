@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { COLLECTION_TO_TABLE, isSharedCollection } from "../../src/lib/rdash/shared-domain-storage";
 
-test("room selections control saved coverage and prices in both quotation layouts", async ({ page, request }) => {
+test("individual types from one combined requirement control rooms and prices in both quotation layouts", async ({ page, request }) => {
   // Seed only the local, in-memory QA backend; all quotation saves use the real UI/API.
   const base = "http://127.0.0.1:3210/rest/v1";
   const suffix = Date.now().toString(36);
@@ -31,8 +31,11 @@ test("room selections control saved coverage and prices in both quotation layout
   await insert("customers", [{ id: customerId, name: `QA Room Quote ${suffix}`, phone: "9000001234", status: "active", created_at: now, updated_at: now }]);
   await insert("sites", [{ id: siteId, customer_id: customerId, name: "QA Rooms Site", site_type: "apartment", stage: "measured", created_at: now, updated_at: now }]);
   await insert("areas", [bedroom, living].map((id, index) => ({ id, site_id: siteId, name: index === 0 ? "Bedroom" : "Living Room", area_type: "bedroom", stage: "measured", created_at: now, updated_at: now })));
-  await insert("workRequired", works);
-  await insert("measurementRevisions", works.flatMap((work) => [bedroom, living].map((areaId) => ({ id: `measurement-${work.id}-${areaId}`, site_id: siteId, work_required_id: work.id, area_id: areaId, revision_no: 1, status: "verified", captured_at: now, captured_by: "QA" }))));
+  const combinedWork = { ...works[0], title: works.map((work) => work.title).join(" / "),
+    work_subcategory_ids: works.flatMap((work) => work.work_subcategory_ids), work_type_ids: works.flatMap((work) => work.work_type_ids),
+    structured_items: works.flatMap((work) => work.structured_items.map((item) => ({ ...item, work_required_id: works[0].id }))) };
+  await insert("workRequired", [combinedWork]);
+  await insert("measurementRevisions", [bedroom, living].map((areaId) => ({ id: `measurement-${combinedWork.id}-${areaId}`, site_id: siteId, work_required_id: combinedWork.id, area_id: areaId, revision_no: 1, status: "verified", captured_at: now, captured_by: "QA" })));
 
   const openCustomerQuotations = async () => {
     await page.goto("/workspace/customers");
@@ -51,8 +54,11 @@ test("room selections control saved coverage and prices in both quotation layout
   await dialog.getByRole("region", { name: "Gypsum False Ceiling · Standard", exact: true }).getByRole("button", { name: "Bedroom", exact: true }).click();
   await dialog.getByRole("button", { name: "Area/room wise", exact: true }).click();
   dialog = page.getByRole("dialog", { name: "Area/room wise quotation", exact: true });
-  await expect(dialog.getByRole("region", { name: "Bedroom", exact: true }).getByRole("checkbox")).toHaveCount(2);
-  await expect(dialog.getByRole("region", { name: "Bedroom", exact: true }).getByRole("button")).toHaveAttribute("aria-pressed", "true");
+  await expect(dialog.getByRole("region", { name: "Bedroom", exact: true }).getByRole("button", { name: /^Remove / })).toHaveCount(2);
+  await expect(dialog.getByRole("region", { name: "Bedroom", exact: true }).getByRole("button", { name: "Bedroom", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await dialog.getByRole("button", { name: "Remove Gypsum False Ceiling · Standard in Bedroom", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "Remove TV Unit · Standard in Bedroom", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await dialog.getByRole("button", { name: "Include Gypsum False Ceiling · Standard in Bedroom", exact: true }).click();
   await dialog.getByRole("button", { name: "Work wise", exact: true }).click();
   dialog = page.getByRole("dialog", { name: "Work wise quotation", exact: true });
   let saved = page.waitForResponse((response) => response.url().includes("/api/operations/commit") && response.request().method() === "POST");
@@ -64,14 +70,27 @@ test("room selections control saved coverage and prices in both quotation layout
   expect(persisted).toHaveLength(1);
   expect(persisted[0].grouping).toBe("work");
   expect(persisted[0].subtotal).toBe(1500);
-  expect(persisted[0].coverage.map((entry: any) => entry.area_ids)).toEqual([[bedroom], [bedroom]]);
+  expect(persisted[0].coverage.map((entry: any) => entry.area_ids)).toEqual([[bedroom]]);
+  expect(persisted[0].scope_lines.map((line: any) => line.work_type_id).sort()).toEqual(combinedWork.work_type_ids.sort());
+  expect(persisted[0].scope_lines.every((line: any) => !line.option_pairs?.length)).toBe(true);
   expect(persisted[0].scope_lines.every((line: any) => line.area_chips.length === 1 && line.area_chips[0].area_id === bedroom)).toBe(true);
+  const itemTitle = page.getByRole("textbox", { name: "Item title", exact: true }).first();
+  const longTitle = "TV Unit · Standard / Wall Panels — PVC / WPC · charcoal / Wallpapers · Standard — complete scope description";
+  await itemTitle.fill(longTitle);
+  await page.getByLabel("Quantity (sum of areas)").first().focus();
+  for (const width of [1092, 390]) {
+    await page.setViewportSize({ width, height: 986 });
+    await expect.poll(() => itemTitle.evaluate((element) => element.scrollHeight <= element.clientHeight + 1)).toBe(true);
+    await expect(itemTitle).toHaveValue(longTitle);
+  }
+  await page.setViewportSize({ width: 1092, height: 986 });
+  await page.screenshot({ path: "test-results/quotation-wrapped-names.png" });
 
   // The other room can be quoted independently for the same Work Required.
   await openCustomerQuotations();
   await page.getByRole("button", { name: "Add quotation Area/room wise", exact: true }).click();
   dialog = page.getByRole("dialog", { name: "Area/room wise quotation", exact: true });
-  await dialog.getByRole("region", { name: "Living Room", exact: true }).getByRole("button").click();
+  await dialog.getByRole("region", { name: "Living Room", exact: true }).getByRole("button", { name: "Living Room", exact: true }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -83,7 +102,7 @@ test("room selections control saved coverage and prices in both quotation layout
   const roomQuote = persisted.find((quote: any) => quote.grouping === "area");
   expect(persisted).toHaveLength(2);
   expect(roomQuote.subtotal).toBe(3000);
-  expect(roomQuote.coverage.map((entry: any) => entry.area_ids)).toEqual([[living], [living]]);
+  expect(roomQuote.coverage.map((entry: any) => entry.area_ids)).toEqual([[living]]);
   expect(roomQuote.scope_lines.map((line: any) => line.area_id)).toEqual([living, living]);
   await page.reload();
   await openCustomerQuotations();

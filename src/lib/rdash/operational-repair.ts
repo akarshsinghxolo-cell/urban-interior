@@ -13,7 +13,8 @@ function tokenScore(title: string, articleName: string) {
 }
 
 function bestScopedMaterialForLine(db: RDashDatabase, line: LineItem, work?: WorkRequired) {
-  const subcategoryIds = work?.work_subcategory_ids || [];
+  // A combined requirement can span categories; never infer a sibling work type's material.
+  const subcategoryIds = line.subcategory_id ? [line.subcategory_id] : work?.work_subcategory_ids || [];
   const rows = db.master.subcategoryArticleMap.filter((row) => !subcategoryIds.length || subcategoryIds.includes(row.work_required_id));
   if (!rows.length) return undefined;
   const current = line.work_required_article_id ? rows.find((row) => row.id === line.work_required_article_id) : undefined;

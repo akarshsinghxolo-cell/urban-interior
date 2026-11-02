@@ -24,6 +24,7 @@ import { areaDependencySummary } from "@/lib/rdash/business-rules";
 import { buildQuotationShareText, shareQuotationText } from "@/lib/rdash/quotation-share";
 import { canPermanentlyDeleteQuotation } from "@/lib/rdash/store/quotations-helpers";
 import { withoutQuotationExtraColumn } from "@/lib/rdash/quotation-extra-columns";
+import { spacedQuotationTitle } from "@/lib/rdash/quotation-work-choices";
 import { confirmDialog } from "./ConfirmDialog";
 import { MapView, type MapPoint } from "./MapView";
 import { visitToMapPoints } from "./visitMap";
@@ -938,7 +939,7 @@ function QuotationOverview({ q }: {
             <div className="flex min-w-0 items-start gap-3"><Avatar name={(q.customer_name || "Customer")} size={42}/><div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Prepared for</p><p className="truncate text-base font-bold">{q.customer_name || "Customer"}</p><p className="mt-0.5 text-xs text-muted-foreground">{site?.name || "Customer-level quotation"}</p></div></div>
             <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs sm:border-l sm:border-border sm:pl-3"><div><dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Issued</dt><dd className="mt-0.5 font-medium">{formatDate(q.created_at)}</dd></div><div><dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Valid until</dt><dd className="mt-0.5 font-medium">{formatDate(q.valid_until)}</dd></div><div><dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Revision</dt><dd className="mt-0.5 font-medium">{q.revision_no}</dd></div><div><dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Scope lines</dt><dd className="mt-0.5 font-medium">{q.scope_lines.length}</dd></div></dl>
           </section>
-          <section><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Project proposal</p><h2 className="mt-1 text-base font-bold text-foreground">{q.title}</h2>{q.parent_quotation_id && <p className="mt-1 text-[11px] text-muted-foreground">Revision of {db.quotations.find((x) => x.id === q.parent_quotation_id)?.quotation_no || "earlier quotation"}</p>}</section>
+          <section><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Project proposal</p><h2 className="mt-1 whitespace-pre-wrap break-words text-base font-bold leading-relaxed text-foreground">{spacedQuotationTitle(q.title, db)}</h2>{q.parent_quotation_id && <p className="mt-1 text-[11px] text-muted-foreground">Revision of {db.quotations.find((x) => x.id === q.parent_quotation_id)?.quotation_no || "earlier quotation"}</p>}</section>
       <section className="quotation-scope-section overflow-hidden rounded-lg border border-border">
         <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/40 px-3 py-2"><div><p className="text-xs font-bold">Scope & pricing</p><p className="text-[10px] text-muted-foreground">Room-wise measured quantities and agreed rates</p></div><div className="no-print flex items-center gap-2">{isEditable && <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-[10px]" onClick={() => void addExtraColumn()}><Plus className="mr-1 h-3 w-3"/>Add work column</Button>}{isEditable && <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">Draft · editable</span>}</div></div>
         {isEditable ? <div className="no-print"><QuotationLineItemEditor quotationId={q.id} items={q.scope_lines} articles={db.master.articles}/></div> : null}
@@ -1309,7 +1310,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                 };
                 return (<div className="col-span-4 flex min-w-0 flex-col items-start gap-1 sm:col-span-1 sm:col-start-1 sm:row-start-1">
                   {boxes.map((box, index) => (<span key={`${box.pair.subcategory_id}-${box.pair.work_type_id || ""}-${index}`} className={cn("inline-flex max-w-full items-center gap-1 rounded border py-0.5 pl-1.5 pr-0.5 text-[10px]", box.primary ? "border-primary/30 bg-primary/5 font-medium text-foreground" : "border-border bg-muted/40 text-muted-foreground")}>
-                    <span className="truncate" title={box.label}>{box.label}</span>
+                    <span className="min-w-0 whitespace-normal break-words" title={box.label}>{box.label}</span>
                     <button type="button" onClick={() => removePairBox(index)} aria-label={`Remove work type ${box.label} from this line`} title={`Remove ${box.label}${box.primary ? " — the next option takes over this line's rate" : ""}`} className="shrink-0 rounded-full p-0.5 text-muted-foreground/70 hover:bg-destructive/10 hover:text-destructive">
                       <X className="h-2.5 w-2.5"/>
                     </button>
@@ -1318,8 +1319,8 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
             })()}
             {(() => {
                 if (it.option_pairs?.length) return null;
-                return (<input type="text" defaultValue={it.title} aria-label="Item title" onBlur={(e) => { if (e.target.value !== it.title)
-                updateQuotationItem(quotationId, it.id, { title: e.target.value }); }} className="col-span-4 min-w-0 rounded border border-transparent bg-transparent px-1 py-0.5 font-medium text-foreground hover:border-border focus:border-primary focus:bg-card focus:outline-none sm:col-span-1 sm:col-start-1 sm:row-start-1"/>);
+                return (<textarea rows={2} defaultValue={it.title} aria-label="Item title" ref={(node) => { if (node && !CSS.supports("field-sizing", "content")) { node.style.height = "auto"; node.style.height = `${node.scrollHeight}px`; } }} onInput={(e) => { if (!CSS.supports("field-sizing", "content")) { e.currentTarget.style.height = "auto"; e.currentTarget.style.height = `${e.currentTarget.scrollHeight}px`; } }} onBlur={(e) => { if (e.target.value !== it.title)
+                updateQuotationItem(quotationId, it.id, { title: e.target.value }); }} className="col-span-4 min-w-0 w-full resize-none [field-sizing:content] whitespace-pre-wrap break-words rounded border border-transparent bg-transparent px-1 py-0.5 font-medium leading-relaxed text-foreground hover:border-border focus:border-primary focus:bg-card focus:outline-none sm:col-span-1 sm:col-start-1 sm:row-start-1"/>);
             })()}
             {(() => {
                 // Annotation B/C: the areas this decision covers, each one a
@@ -1339,7 +1340,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                 };
                 return (<div className="col-span-4 flex min-w-0 flex-wrap items-center gap-1 sm:col-span-1 sm:col-start-4 sm:row-start-1">
                   {chips.map((chip, index) => (<span key={`${chip.area_id || chip.area_name}-${index}`} className="inline-flex max-w-full items-center gap-1 rounded border border-border bg-muted/40 py-0.5 pl-1.5 pr-0.5 text-[10px] text-muted-foreground">
-                    <span className="truncate">{chip.area_name}{chip.quantity ? ` · ${chip.quantity}` : ""}</span>
+                    <span className="min-w-0 whitespace-normal break-words">{chip.area_name}{chip.quantity ? ` · ${chip.quantity}` : ""}</span>
                     <button type="button" onClick={() => removeChip(index)} aria-label={`Remove area ${chip.area_name} from ${it.title}`} title={`Remove ${chip.area_name} — quantity drops to ${areaChipQuantity(chips.filter((_, i) => i !== index)) || 0}`} className="shrink-0 rounded-full p-0.5 text-muted-foreground/70 hover:bg-destructive/10 hover:text-destructive">
                       <X className="h-2.5 w-2.5"/>
                     </button>

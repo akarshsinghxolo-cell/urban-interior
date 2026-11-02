@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CalendarClock, Check, FilePlus2, Plus, Ruler } from "lucide-react";
+import { CalendarClock, Check, FilePlus2, Plus, Ruler, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -13,7 +13,8 @@ import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
 import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
 import { useRDashStore, type CreateDialogRequest } from "@/lib/rdash/store";
 import type { RDashDatabase, WorkRequired } from "@/lib/rdash/types";
-import { workTypeNamesForIds } from "@/lib/rdash/work-types";
+import { itemOptionPairs } from "@/lib/rdash/work-types";
+import { quotationWorkChoices, quotationChoiceLines, type QuotationWorkChoice } from "@/lib/rdash/quotation-work-choices";
 import { quotationMeasuredLine } from "@/lib/rdash/quotation-measurement";
 import {
   CustomerAreaDimensionsFields,
@@ -21,7 +22,7 @@ import {
   type CustomerAreaDimensionsDraft,
 } from "./CustomerAreaDimensionsFields";
 
-type MeasurementRequest = { workIds: string[]; areaId?: string };
+type MeasurementRequest = { workIds: string[]; areaId?: string; choiceIds?: string[] };
 
 /**
  * Canonical quotation workflow for the whole app.
@@ -52,7 +53,7 @@ export function CustomerQuotationDialog({ request, onClose }: {
 
   const [customerId, setCustomerId] = React.useState(initialCustomerId);
   const [siteId, setSiteId] = React.useState(initialSiteId);
-  const initialSelection: Record<string, string[]> = initialWorkRequired ? { [initialWorkRequired.id]: initialWorkRequired.area_ids } : {};
+  const initialSelection: Record<string, string[]> = Object.fromEntries(quotationWorkChoices(db, initialWorkRequired ? [initialWorkRequired] : []).map((work) => [work.id, work.area_ids]));
   const [selectedAreas, setSelectedAreas] = React.useState(initialSelection);
   const workRequiredIds = Object.keys(selectedAreas);
   const [grouping, setGrouping] = React.useState<"work" | "area">(request.quotationGrouping || "work");
@@ -77,8 +78,8 @@ export function CustomerQuotationDialog({ request, onClose }: {
     [customerId, db.sites],
   );
   const matchingWorkRequired = React.useMemo(
-    () => db.workRequired.filter((work) => work.customer_id === customerId && work.site_id === siteId),
-    [customerId, db.workRequired, siteId],
+    () => quotationWorkChoices({ master: db.master }, db.workRequired.filter((work) => work.customer_id === customerId && work.site_id === siteId)),
+    [customerId, db.workRequired, db.master, siteId],
   );
   const siteAreas = React.useMemo(
     () => db.areas.filter((area) => area.site_id === siteId && !area.is_archived),
@@ -104,19 +105,13 @@ export function CustomerQuotationDialog({ request, onClose }: {
       else next[work.id] = [...work.area_ids];
     }
     setSelectedAreas(next);
-    setTitle([...new Set(Object.keys(next).map((id) => matchingWorkRequired.find((work) => work.id === id)?.title).filter(Boolean))].join(" / ") || defaultTitle());
+    setTitle([...new Set(Object.keys(next).map((id) => matchingWorkRequired.find((work) => work.id === id)?.title).filter(Boolean))].join("      ") || defaultTitle());
   };
 
-  const workRequiredLabel = (work: WorkRequired) => [
-    (work.work_subcategory_ids || [])
-      .map((id) => db.master.workSubcategories.find((subcategory) => subcategory.id === id)?.name)
-      .filter(Boolean)
-      .join(" + "),
-    ...workTypeNamesForIds(db.master.workSubcategories, work.work_type_ids),
-  ].filter(Boolean).join(" · ") || work.title;
+  const workRequiredLabel = (work: WorkRequired) => work.title;
 
   // Group the display only: coverage continues to reference the original work records.
-  const workGroups = new Map<string, WorkRequired[]>();
+  const workGroups = new Map<string, QuotationWorkChoice[]>();
   for (const work of matchingWorkRequired) {
     const label = workRequiredLabel(work);
     workGroups.set(label, [...(workGroups.get(label) || []), work]);
@@ -144,8 +139,8 @@ export function CustomerQuotationDialog({ request, onClose }: {
       if (siteId && !site) throw new Error("The selected Site no longer belongs to this Customer");
 
       let selectedWorkRequired = workRequiredIds
-        .map((id) => db.workRequired.find((row) => row.id === id && row.customer_id === customerId && row.site_id === siteId))
-        .filter((work): work is WorkRequired => Boolean(work));
+        .map((id) => matchingWorkRequired.find((row) => row.id === id))
+        .filter((work): work is QuotationWorkChoice => Boolean(work));
 
       if (selectedWorkRequired.length !== workRequiredIds.length) {
         throw new Error("One or more selected Work Required records no longer match this Customer and Site");
@@ -186,20 +181,20 @@ export function CustomerQuotationDialog({ request, onClose }: {
           created_at: now,
           updated_at: now,
         };
-        selectedWorkRequired = [created || fallback];
+        selectedWorkRequired = [{ ...(created || fallback), sourceWorkId: newId }];
       }
 
       // Rooms can be quoted separately; only overlapping work/room coverage
       // should lead back to an existing quotation.
       const alreadyCovered = selectedWorkRequired.flatMap((work) => {
-        const quotation = activeQuotationForWork(db, work.id, work.area_ids);
+        const quotation = activeQuotationForWork(db, work.sourceWorkId, work.area_ids, work.work_type_ids);
         return quotation ? [{ work, quotation }] : [];
       });
       if (alreadyCovered.length) {
         if (alreadyCovered.length === 1 && selectedWorkRequired.length === 1) {
           toast.info(`${alreadyCovered[0].quotation.quotation_no} already covers some or all of the selected rooms for this work.`);
-          openDetail("quotation", alreadyCovered[0].quotation.id);
           dirtyFormRegistry.markClean(formId);
+          openDetail("quotation", alreadyCovered[0].quotation.id);
           onClose();
           return true;
         }
@@ -212,12 +207,14 @@ export function CustomerQuotationDialog({ request, onClose }: {
       const verifiedByWork = new Map<string, string[]>();
       if (site) {
         for (const work of selectedWorkRequired) {
-          const verified = verifiedMeasurementRevisionIds(db, site.id, work);
-          const missingAreas = unverifiedAreaIdsForWork(db, site.id, work);
+          const sourceWork = { ...work, id: work.sourceWorkId };
+          const verified = verifiedMeasurementRevisionIds(db, site.id, sourceWork);
+          const missingAreas = unverifiedAreaIdsForWork(db, site.id, sourceWork);
           if (missingAreas.length) {
             const group = workGroups.get(workRequiredLabel(work)) || [work];
             setMeasurementRequest({
-              workIds: group.filter((entry) => selectedAreas[entry.id]?.includes(missingAreas[0])).map((entry) => entry.id),
+              workIds: [...new Set(group.filter((entry) => selectedAreas[entry.id]?.includes(missingAreas[0])).map((entry) => entry.sourceWorkId))],
+              choiceIds: group.filter((entry) => selectedAreas[entry.id]?.includes(missingAreas[0])).map((entry) => entry.id),
               areaId: missingAreas[0],
             });
             toast.info(`Add the verified measurement for ${areaName(missingAreas[0])} to continue.`);
@@ -231,7 +228,7 @@ export function CustomerQuotationDialog({ request, onClose }: {
       const coverage = site
         ? selectedWorkRequired.map((work, index) => ({
             id: `coverage-${Date.now().toString(36)}-${index}`,
-            work_required_id: work.id,
+            work_required_id: work.sourceWorkId,
             area_ids: work.area_ids,
             measurement_revision_ids: verifiedByWork.get(work.id) || [],
             coverage_label: workRequiredLabel(work),
@@ -242,33 +239,21 @@ export function CustomerQuotationDialog({ request, onClose }: {
       // Customer-level quotations have no Site coverage. Captured scope is
       // copied as starter lines and becomes linked coverage only after a Site
       // exists; this is the single serialization path for that case.
-      const scopeLines = site ? undefined : selectedWorkRequired.flatMap((work, index) => {
-        const items = (work.structured_items || []).filter((item) => Number.isFinite(item.quantity));
-        if (!items.length) return [];
-        const primary = items.find((item) => item.option_pairs?.length) || items[0];
-        const amount = Math.round(items.reduce((sum, item) => sum + (item.amount || 0), 0) * 100) / 100;
-        const quantity = Math.round(items.reduce((sum, item) => sum + (item.quantity || 0), 0) * 100) / 100;
-        return [{
-          id: `qi-${Date.now().toString(36)}-${index}`,
-          title: workRequiredLabel(work) || work.title,
-          category_id: primary.category_id,
-          article_id: primary.article_id,
-          work_required_article_id: primary.work_required_article_id,
-          option_pairs: primary.option_pairs,
-          quantity: quantity || 1,
-          unit_id: primary.unit_id,
-          unit_name: primary.unit_name,
-          rate: quantity ? Math.round((amount / quantity) * 100) / 100 : primary.rate || 0,
-          amount,
-          tax_rate: primary.tax_rate,
-          source_kind: "quotation" as const,
-        }];
-      });
+      const scopeLines = quotationChoiceLines(db, selectedWorkRequired, grouping, () => `qi-${crypto.randomUUID()}`);
+      const mergedCoverage = coverage.reduce<typeof coverage>((result, entry) => {
+        const existing = result.find((row) => row.work_required_id === entry.work_required_id);
+        if (existing) {
+          existing.area_ids = [...new Set([...existing.area_ids, ...entry.area_ids])];
+          existing.measurement_revision_ids = [...new Set([...existing.measurement_revision_ids, ...entry.measurement_revision_ids])];
+          existing.coverage_label += `      ${entry.coverage_label}`;
+        } else result.push({ ...entry });
+        return result;
+      }, []);
 
       const id = addQuotation({
         customer_id: customerId,
         site_id: site?.id || "",
-        coverage,
+        coverage: mergedCoverage,
         ...(scopeLines ? { scope_lines: scopeLines } : {}),
         title: quotationTitle,
         valid_until: validUntil,
@@ -283,8 +268,8 @@ export function CustomerQuotationDialog({ request, onClose }: {
         quotationTitle,
         `Draft for ${customer.name}${site ? ` · ${site.name}` : " · no site yet"} · valid until ${validUntil}`,
       );
-      openDetail("quotation", id);
       dirtyFormRegistry.markClean(formId);
+      openDetail("quotation", id);
       onClose();
       return true;
     } catch (error) {
@@ -373,7 +358,8 @@ export function CustomerQuotationDialog({ request, onClose }: {
               {grouping === "work" ? [...workGroups].map(([label, works]) => {
                 const areas = [...new Set(works.flatMap((work) => work.area_ids))];
                 const otherAreas = siteAreas.filter((area) => !areas.includes(area.id));
-                const targetWorkIds = works[0] ? [works[0].id] : [];
+                const targetWorkIds = works[0] ? [works[0].sourceWorkId] : [];
+                const targetChoiceIds = works[0] ? [works[0].id] : [];
                 const included = works.every((work) => selectedAreas[work.id] && work.area_ids.every((id) => selectedAreas[work.id].includes(id)));
                 return <section key={label} aria-label={label} className="space-y-2 rounded-md border border-border p-2">
                   <label className="flex cursor-pointer items-start gap-2 text-sm font-medium">
@@ -391,8 +377,8 @@ export function CustomerQuotationDialog({ request, onClose }: {
                   {siteId && <div className="border-t border-dashed border-border pt-2">
                     <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Add another area and measurement</p>
                     <div className="flex flex-wrap gap-1.5">
-                      {otherAreas.map((area) => <Button key={area.id} type="button" size="sm" variant="outline" className="min-h-8 h-auto whitespace-normal border-amber-500/30 bg-amber-500/[0.07] px-2 py-1 text-left text-xs text-amber-800 dark:text-amber-300" onClick={() => setMeasurementRequest({ workIds: targetWorkIds, areaId: area.id })}>{area.name}</Button>)}
-                      <Button type="button" size="sm" variant="outline" className="min-h-8 h-auto px-2 py-1 text-xs" onClick={() => setMeasurementRequest({ workIds: targetWorkIds })}><Plus className="mr-1 h-3.5 w-3.5" />New area</Button>
+                      {otherAreas.map((area) => <Button key={area.id} type="button" size="sm" variant="outline" className="min-h-8 h-auto whitespace-normal border-amber-500/30 bg-amber-500/[0.07] px-2 py-1 text-left text-xs text-amber-800 dark:text-amber-300" onClick={() => setMeasurementRequest({ workIds: targetWorkIds, choiceIds: targetChoiceIds, areaId: area.id })}>{area.name}</Button>)}
+                      <Button type="button" size="sm" variant="outline" className="min-h-8 h-auto px-2 py-1 text-xs" onClick={() => setMeasurementRequest({ workIds: targetWorkIds, choiceIds: targetChoiceIds })}><Plus className="mr-1 h-3.5 w-3.5" />New area</Button>
                     </div>
                   </div>}
                 </section>;
@@ -401,14 +387,14 @@ export function CustomerQuotationDialog({ request, onClose }: {
                 const included = works.every((work) => areaId ? selectedAreas[work.id]?.includes(areaId) : Boolean(selectedAreas[work.id]));
                 return <section key={areaId} aria-label={areaId ? areaName(areaId) : "No room assigned"} className="space-y-2 rounded-md border border-border p-2">
                   <button type="button" aria-pressed={included} className={`${chipClass(included)} font-semibold`} onClick={() => changeSelection(works, areaId || undefined)}>{areaId ? areaName(areaId) : "No room assigned"}</button>
-                  <div className="space-y-2">
+                  <div className="flex flex-wrap gap-x-[5ch] gap-y-2">
                     {[...workGroups].map(([label, group]) => {
                       const linked = group.filter((work) => works.includes(work));
                       if (!linked.length) return null;
                       const selected = linked.every((work) => areaId ? selectedAreas[work.id]?.includes(areaId) : Boolean(selectedAreas[work.id]));
-                      return <label key={label} className="flex cursor-pointer items-start gap-2 text-xs">
-                        <input type="checkbox" className="mt-0.5 shrink-0" checked={selected} onChange={() => changeSelection(linked, areaId || undefined)} /><span>{label}</span>
-                      </label>;
+                      return <button key={label} type="button" aria-pressed={selected} aria-label={`${selected ? "Remove" : "Include"} ${label} ${areaId ? `in ${areaName(areaId)}` : "without room"}`} className={`${chipClass(selected)} inline-flex max-w-full items-start gap-2`} onClick={() => changeSelection(linked, areaId || undefined)}>
+                        <span className="min-w-0 break-words">{label}</span>{selected ? <X aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <Plus aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+                      </button>;
                     })}
                   </div>
                 </section>;
@@ -444,7 +430,8 @@ export function CustomerQuotationDialog({ request, onClose }: {
         onSaved={(areaId, workIds) => {
           setSelectedAreas((current) => {
             const next = { ...current };
-            for (const workId of workIds) next[workId] = [...new Set([...(next[workId] || []), areaId])];
+            const choiceIds = measurementRequest.choiceIds || matchingWorkRequired.filter((work) => workIds.includes(work.sourceWorkId)).map((work) => work.id);
+            for (const choiceId of choiceIds) next[choiceId] = [...new Set([...(next[choiceId] || []), areaId])];
             return next;
           });
           setMeasurementRequest(null);
@@ -454,11 +441,15 @@ export function CustomerQuotationDialog({ request, onClose }: {
   );
 }
 
-export function activeQuotationForWork(db: Pick<RDashDatabase, "quotations">, workRequiredId: string, areaIds?: string[]) {
+export function activeQuotationForWork(db: Pick<RDashDatabase, "quotations">, workRequiredId: string, areaIds?: string[], workTypeIds?: string[]) {
   return db.quotations.find((quotation) =>
     quotation.status !== "cancelled" &&
     quotation.coverage.some((coverage) => coverage.work_required_id === workRequiredId &&
-      (!areaIds?.length || !coverage.area_ids.length || coverage.area_ids.some((id) => areaIds.includes(id)))),
+      (!areaIds?.length || !coverage.area_ids.length || coverage.area_ids.some((id) => areaIds.includes(id)))) &&
+    (!workTypeIds?.length || !quotation.scope_lines.length || quotation.scope_lines.some((line) =>
+      line.work_required_id === workRequiredId &&
+      (!areaIds?.length || (line.area_chips?.length ? line.area_chips.some((chip) => chip.area_id && areaIds.includes(chip.area_id)) : !line.area_id || areaIds.includes(line.area_id))) &&
+      (!line.work_type_id && !line.option_pairs?.length || itemOptionPairs(line).some((pair) => pair.work_type_id && workTypeIds.includes(pair.work_type_id))))),
   );
 }
 
