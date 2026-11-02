@@ -1291,7 +1291,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
           No line items yet. Click "Add item" to build the quotation.
         </div>) : (items.map((it, itemIndex) => (<React.Fragment key={it.id}>
           {quotation?.grouping === "area" && (itemIndex === 0 || items[itemIndex - 1].area_id !== it.area_id) && <h3 className="border-b border-border bg-muted/50 px-3 py-2 text-sm font-semibold">{it.area_chips?.[0]?.area_name || it.area_name || "No room assigned"}</h3>}
-          <div className="group grid grid-cols-[5.5rem_4rem_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 border-b border-border px-3 py-1.5 text-xs last:border-0 hover:bg-accent/20 sm:grid-cols-[minmax(0,1.6fr)_5.5rem_4rem_minmax(0,1.1fr)_5.5rem_2rem]">
+          <div className="group grid grid-cols-[5.5rem_4rem_minmax(0,1fr)_auto] items-center gap-x-1 gap-y-1 border-b border-border px-3 py-1.5 text-xs last:border-0 hover:bg-accent/20 sm:grid-cols-[minmax(0,1.6fr)_5.5rem_4rem_minmax(0,1.1fr)_5.5rem_2rem]">
             {(() => {
                 // Use saved catalogue IDs, never an old combined display title, to identify priced work.
                 if (!it.option_pairs?.length && !it.subcategory_id) return null;
@@ -1338,17 +1338,17 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                 };
                 return (<div className="col-span-4 flex min-w-0 flex-wrap items-center gap-1 sm:col-span-1 sm:col-start-4 sm:row-start-1">
                   {chips.map((chip, index) => (<span key={`${chip.area_id || chip.area_name}-${index}`} className="inline-flex max-w-full items-center gap-1 rounded border border-border bg-muted/40 py-0.5 pl-1.5 pr-0.5 text-[10px] text-muted-foreground">
-                    <span className="min-w-0 whitespace-normal break-words">{chip.area_name}{chip.quantity ? ` · ${chip.quantity}` : ""}</span>
+                    <span className="min-w-0 whitespace-normal break-words">{chip.area_name}{chip.quantity ? ` · ${chip.quantity} ${units.find((unit) => unit.id === it.unit_id)?.symbol || it.unit_name || ""}`.trimEnd() : ""}</span>
                     <button type="button" onClick={() => removeChip(index)} aria-label={`Remove area ${chip.area_name} from ${it.title}`} title={`Remove ${chip.area_name} — quantity drops to ${areaChipQuantity(chips.filter((_, i) => i !== index)) || 0}`} className="shrink-0 rounded-full p-0.5 text-muted-foreground/70 hover:bg-destructive/10 hover:text-destructive">
                       <X className="h-2.5 w-2.5"/>
                     </button>
                   </span>))}
                 </div>);
             })()}
-            <div className="col-start-2 row-start-3 flex min-w-0 items-center gap-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono hover:border-border focus-within:border-primary focus-within:bg-card sm:col-start-3 sm:row-start-1" title={it.area_chips?.length ? "Sum of the area boxes — remove an area box to reduce it" : undefined}>
+            <div className="col-start-2 row-start-3 flex min-w-0 items-center justify-start gap-0.5 rounded border border-transparent bg-transparent px-0.5 py-0.5 font-mono hover:border-border focus-within:border-primary focus-within:bg-card sm:col-start-3 sm:row-start-1" title={it.area_chips?.length ? "Sum of the area boxes — remove an area box to reduce it" : undefined}>
               <span aria-hidden className="text-[10px] font-semibold text-muted-foreground">×</span>
-              {it.area_chips?.length ? (<input type="number" value={areaChipQuantity(it.area_chips)} aria-label="Quantity (sum of areas)" readOnly className="min-w-0 w-full cursor-default bg-transparent text-right outline-none"/>) : (<input type="number" defaultValue={it.quantity} aria-label="Quantity" min="0" step="0.01" onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== it.quantity)
-            updateQuotationItem(quotationId, it.id, { quantity: v }); }} className="min-w-0 w-full bg-transparent text-right outline-none"/>)}
+              {it.area_chips?.length ? (<input type="number" value={areaChipQuantity(it.area_chips)} aria-label="Quantity (sum of areas)" readOnly className="min-w-0 w-full cursor-default bg-transparent text-left outline-none"/>) : (<input type="number" defaultValue={it.quantity} aria-label="Quantity" min="0" step="0.01" onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== it.quantity)
+            updateQuotationItem(quotationId, it.id, { quantity: v }); }} className="min-w-0 w-full bg-transparent text-left outline-none"/>)}
             </div>
             {(() => {
                 // Annotation B: one rate box per work type — the total rate
@@ -1356,19 +1356,19 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                 const pairBoxes = it.option_pairs?.length ? linePairBoxes(it, workSubcategories, contractorRates) : null;
                 if (!pairBoxes) return null;
                 return (<div className="col-start-1 row-start-3 flex min-w-0 flex-col items-stretch gap-0.5 rounded px-1 py-0.5 font-mono sm:col-span-1 sm:col-start-2 sm:row-start-1">
-                  {pairBoxes.map((box, index) => (<div key={index} className={cn("flex items-center gap-1 rounded border border-transparent hover:border-border focus-within:border-primary focus-within:bg-card", box.primary ? "text-foreground" : "text-muted-foreground")}>
+                  {pairBoxes.map((box, index) => (<div key={index} className={cn("flex items-center justify-end gap-0.5 rounded border border-transparent hover:border-border focus-within:border-primary focus-within:bg-card", box.primary ? "text-foreground" : "text-muted-foreground")}>
                     <span aria-hidden className="text-[10px] font-semibold">₹</span>
                     <input type="number" defaultValue={box.rate ?? ""} placeholder="—" min="0" step="1" aria-label={`Rate for ${box.label}${box.primary ? " (drives this line)" : ""}`} onBlur={(e) => { const v = parseFloat(e.target.value); if (isNaN(v) || v === box.rate)
-                    return; const nextPairs = (it.option_pairs || []).map((p, pi) => pi === index ? { ...p, rate: v } : p); updateQuotationItem(quotationId, it.id, box.primary ? { option_pairs: nextPairs, rate: v } : { option_pairs: nextPairs }); }} className="min-w-0 w-full bg-transparent text-right outline-none"/>
+                    return; const nextPairs = (it.option_pairs || []).map((p, pi) => pi === index ? { ...p, rate: v } : p); updateQuotationItem(quotationId, it.id, box.primary ? { option_pairs: nextPairs, rate: v } : { option_pairs: nextPairs }); }} className="min-w-0 w-[3.75rem] bg-transparent text-right outline-none"/>
                   </div>))}
                 </div>);
             })()}
             {(() => {
                 if (it.option_pairs?.length) return null;
-                return (<div className="col-start-1 row-start-3 flex min-w-0 items-center gap-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono text-muted-foreground hover:border-border focus-within:border-primary focus-within:bg-card focus-within:text-foreground sm:col-start-2 sm:row-start-1">
+                return (<div className="col-start-1 row-start-3 flex min-w-0 items-center justify-end gap-0.5 rounded border border-transparent bg-transparent px-0.5 py-0.5 font-mono text-muted-foreground hover:border-border focus-within:border-primary focus-within:bg-card focus-within:text-foreground sm:col-start-2 sm:row-start-1">
                   <span aria-hidden className="text-[10px] font-semibold">₹</span>
                   <input type="number" defaultValue={it.rate} aria-label="Rate" min="0" step="1" onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== it.rate)
-                updateQuotationItem(quotationId, it.id, { rate: v }); }} className="min-w-0 w-full bg-transparent text-right outline-none"/>
+                updateQuotationItem(quotationId, it.id, { rate: v }); }} className="min-w-0 w-[3.75rem] bg-transparent text-right outline-none"/>
                 </div>);
             })()}
             {(() => {

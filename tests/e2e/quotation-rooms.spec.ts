@@ -74,6 +74,8 @@ test("individual types from one combined requirement control rooms and prices in
   expect(persisted[0].scope_lines.map((line: any) => line.work_type_id).sort()).toEqual(combinedWork.work_type_ids.sort());
   expect(persisted[0].scope_lines.every((line: any) => !line.option_pairs?.length)).toBe(true);
   expect(persisted[0].scope_lines.every((line: any) => line.area_chips.length === 1 && line.area_chips[0].area_id === bedroom)).toBe(true);
+  await expect(page.getByText("Bedroom · 1 sqft", { exact: true })).toBeVisible();
+  await expect(page.getByText("Bedroom · 10 sqft", { exact: true })).toBeVisible();
   const removeTv = page.getByRole("button", { name: "Remove work type TV Unit · Standard from this line", exact: true });
   await expect(removeTv).toBeVisible();
   await expect(page.getByRole("button", { name: "Remove work type Gypsum False Ceiling · Standard from this line", exact: true })).toBeVisible();
@@ -84,6 +86,18 @@ test("individual types from one combined requirement control rooms and prices in
     expect(rate!.x + rate!.width).toBeLessThan(qty!.x);
     expect(Math.abs(rate!.y - qty!.y)).toBeLessThan(2);
     expect(rate!.width).toBeGreaterThan(50);
+    const calculationGaps = await page.evaluate(() => {
+      const rateInput = document.querySelector<HTMLInputElement>('input[aria-label="Rate"]')!;
+      const quantityInput = document.querySelector<HTMLInputElement>('input[aria-label="Quantity (sum of areas)"]')!;
+      const currency = rateInput.previousElementSibling!.getBoundingClientRect();
+      const rateBox = rateInput.getBoundingClientRect();
+      const times = quantityInput.previousElementSibling!.getBoundingClientRect();
+      const quantityBox = quantityInput.getBoundingClientRect();
+      return { currencyToRate: rateBox.left - currency.right, rateToTimes: times.left - rateBox.right, timesToQuantity: quantityBox.left - times.right };
+    });
+    expect(calculationGaps.currencyToRate).toBeLessThanOrEqual(4);
+    expect(calculationGaps.rateToTimes).toBeLessThanOrEqual(12);
+    expect(calculationGaps.timesToQuantity).toBeLessThanOrEqual(4);
     await expect(removeTv).toBeVisible();
   }
   await page.setViewportSize({ width: 1092, height: 986 });
