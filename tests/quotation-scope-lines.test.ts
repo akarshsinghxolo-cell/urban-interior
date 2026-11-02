@@ -253,6 +253,16 @@ describe("quotation pair boxes (one box per work type: item / rate / amount)", (
     const single = { ...line, option_pairs: [line.option_pairs[0]] };
     expect(removeOptionPair(single as any, 0, workSubcategories, contractorRates)).toBeNull();
   });
+
+  test("a legacy combined title does not invent extra priced work; the saved single type is removable", () => {
+    const single = { ...line, option_pairs: undefined };
+    const before = JSON.stringify(single);
+    const boxes = linePairBoxes(single, workSubcategories, contractorRates);
+    expect(boxes).toHaveLength(1);
+    expect(boxes[0]).toMatchObject({ label: "Kitchen Cabinets (Modular) · premium", rate: 150, amount: 4800 });
+    expect(removeOptionPair(single, 0, workSubcategories, contractorRates)).toBeNull();
+    expect(JSON.stringify(single)).toBe(before);
+  });
 });
 
 describe("omittedOptedPairs (editor's bottom 'opted but not priced' list)", () => {

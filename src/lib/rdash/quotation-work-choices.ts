@@ -3,11 +3,11 @@ import { averageWorkTypeTotalRate, capturedPairsTitle, groupedQuotationScopeLine
 import { quotationMeasuredLine } from "./quotation-measurement";
 
 export function spacedQuotationTitle(title: string, db: Pick<RDashDatabase, "master">): string {
-  let result = title;
+  let result = title.replace(/ {6,}/g, " ".repeat(15));
   for (const subcategory of db.master.workSubcategories) {
     for (const type of workTypesForSubcategory(subcategory)) {
       const label = `${subcategory.name} · ${type.name}`;
-      result = result.split(` / ${label}`).join(`      ${label}`);
+      result = result.split(` / ${label}`).join(`${" ".repeat(15)}${label}`);
     }
   }
   return result;

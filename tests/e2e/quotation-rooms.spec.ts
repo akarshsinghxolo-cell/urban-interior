@@ -74,14 +74,17 @@ test("individual types from one combined requirement control rooms and prices in
   expect(persisted[0].scope_lines.map((line: any) => line.work_type_id).sort()).toEqual(combinedWork.work_type_ids.sort());
   expect(persisted[0].scope_lines.every((line: any) => !line.option_pairs?.length)).toBe(true);
   expect(persisted[0].scope_lines.every((line: any) => line.area_chips.length === 1 && line.area_chips[0].area_id === bedroom)).toBe(true);
-  const itemTitle = page.getByRole("textbox", { name: "Item title", exact: true }).first();
-  const longTitle = "TV Unit · Standard / Wall Panels — PVC / WPC · charcoal / Wallpapers · Standard — complete scope description";
-  await itemTitle.fill(longTitle);
-  await page.getByLabel("Quantity (sum of areas)").first().focus();
+  const removeTv = page.getByRole("button", { name: "Remove work type TV Unit · Standard from this line", exact: true });
+  await expect(removeTv).toBeVisible();
+  await expect(page.getByRole("button", { name: "Remove work type Gypsum False Ceiling · Standard from this line", exact: true })).toBeVisible();
   for (const width of [1092, 390]) {
     await page.setViewportSize({ width, height: 986 });
-    await expect.poll(() => itemTitle.evaluate((element) => element.scrollHeight <= element.clientHeight + 1)).toBe(true);
-    await expect(itemTitle).toHaveValue(longTitle);
+    const rate = await page.getByRole("spinbutton", { name: "Rate", exact: true }).first().boundingBox();
+    const qty = await page.getByLabel("Quantity (sum of areas)").first().boundingBox();
+    expect(rate!.x + rate!.width).toBeLessThan(qty!.x);
+    expect(Math.abs(rate!.y - qty!.y)).toBeLessThan(2);
+    expect(rate!.width).toBeGreaterThan(50);
+    await expect(removeTv).toBeVisible();
   }
   await page.setViewportSize({ width: 1092, height: 986 });
   await page.screenshot({ path: "test-results/quotation-wrapped-names.png" });
@@ -125,4 +128,16 @@ test("individual types from one combined requirement control rooms and prices in
   await expect(customerForm).toHaveCount(0);
   const workRows = await (await request.get(`${base}/${COLLECTION_TO_TABLE.workRequired}?collection=eq.workRequired&id=eq.${works[0].id}`)).json();
   expect(workRows[0].data.area_ids.sort()).toEqual([bedroom, living].sort());
+
+  await openCustomerQuotations();
+  await page.getByRole("button", { name: new RegExp(roomQuote.quotation_no) }).click();
+  saved = page.waitForResponse((response) => response.url().includes("/api/operations/commit") && response.request().method() === "POST");
+  await page.getByRole("button", { name: "Remove work type TV Unit · Standard from this line", exact: true }).click();
+  expect((await saved).status()).toBe(200);
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Remove work type TV Unit · Standard from this line", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Remove work type Gypsum False Ceiling · Standard from this line", exact: true })).toBeVisible();
+  const afterRemoval = (await quotes()).find((quote: any) => quote.id === roomQuote.id);
+  expect(afterRemoval.scope_lines).toHaveLength(1);
+  expect(afterRemoval.subtotal).toBe(2000);
 });

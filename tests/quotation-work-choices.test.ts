@@ -74,9 +74,11 @@ describe("independent quotation work types", () => {
     expect(activeQuotationForWork(db, "work", ["guest"], ["charcoal"])?.id).toBe("quote");
   });
 
-  test("adds six spaces between works without breaking slashes inside service names", () => {
+  test("adds fifteen spaces between works without breaking slashes inside service names", () => {
     const { db } = fixture();
     expect(spacedQuotationTitle("Wall Panels — PVC / WPC · charcoal / Gypsum False Ceiling · Standard", db))
-      .toBe("Wall Panels — PVC / WPC · charcoal      Gypsum False Ceiling · Standard");
+      .toBe(`Wall Panels — PVC / WPC · charcoal${" ".repeat(15)}Gypsum False Ceiling · Standard`);
+    expect(spacedQuotationTitle("Moulding · Standard      Wallpapers · Standard", db))
+      .toBe(`Moulding · Standard${" ".repeat(15)}Wallpapers · Standard`);
   });
 });

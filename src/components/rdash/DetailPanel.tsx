@@ -1083,6 +1083,7 @@ function quotationLineAreaLabel(line: import("@/lib/rdash/types").LineItem): str
 
 function QuotationScopeTable({ quotation }: { quotation: import("@/lib/rdash/types").Quotation }) {
     const columns = quotation.extra_columns || [];
+    const workSubcategories = useRDashStore((state) => state.db.master.workSubcategories);
     return <div className="overflow-x-auto">
       <table className="quotation-table w-full border-collapse text-left text-xs">
         <thead><tr className="bg-slate-100 text-[10px] uppercase tracking-wide text-slate-600">
@@ -1094,7 +1095,7 @@ function QuotationScopeTable({ quotation }: { quotation: import("@/lib/rdash/typ
           <th className="px-3 py-2 text-right font-semibold">Line total</th>
         </tr></thead>
         <tbody>{quotation.scope_lines.map((line) => <tr key={line.id} className="border-t border-slate-200 align-top">
-          <td className="px-3 py-2 font-medium text-slate-900">{line.title}<div className="mt-0.5 text-[9px] font-normal text-slate-500">{line.unit_name || ""}</div></td>
+          <td className="px-3 py-2 font-medium text-slate-900">{capturedPairsTitle(workSubcategories, line.option_pairs?.length ? line.option_pairs : [line]) || line.title}<div className="mt-0.5 text-[9px] font-normal text-slate-500">{line.unit_name || ""}</div></td>
           <td className="px-2 py-2 text-slate-600">{quotationLineAreaLabel(line)}</td>
           <td className="px-2 py-2 text-right font-mono">{line.quantity}</td>
           <td className="px-2 py-2 text-right font-mono">{formatINR(line.rate)}</td>
@@ -1277,7 +1278,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
     };
     return (<div className="overflow-hidden rounded-lg border border-border">
 
-      <div className="hidden gap-2 border-b border-border bg-muted/50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground sm:grid sm:grid-cols-[1.6fr_0.6fr_0.5fr_1.1fr_0.6fr_0.3fr]">
+      <div className="hidden gap-2 border-b border-border bg-muted/50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground sm:grid sm:grid-cols-[minmax(0,1.6fr)_5.5rem_4rem_minmax(0,1.1fr)_5.5rem_2rem]">
         <span>Item</span>
         <span className="text-right">Rate</span>
         <span className="text-right">Qty</span>
@@ -1290,13 +1291,10 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
           No line items yet. Click "Add item" to build the quotation.
         </div>) : (items.map((it, itemIndex) => (<React.Fragment key={it.id}>
           {quotation?.grouping === "area" && (itemIndex === 0 || items[itemIndex - 1].area_id !== it.area_id) && <h3 className="border-b border-border bg-muted/50 px-3 py-2 text-sm font-semibold">{it.area_chips?.[0]?.area_name || it.area_name || "No room assigned"}</h3>}
-          <div className="group grid grid-cols-[2.75rem_2.75rem_1fr_auto] items-center gap-x-2 gap-y-1 border-b border-border px-3 py-1.5 text-xs last:border-0 hover:bg-accent/20 sm:grid-cols-[1.6fr_0.6fr_0.5fr_1.1fr_0.6fr_0.3fr]">
+          <div className="group grid grid-cols-[5.5rem_4rem_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 border-b border-border px-3 py-1.5 text-xs last:border-0 hover:bg-accent/20 sm:grid-cols-[minmax(0,1.6fr)_5.5rem_4rem_minmax(0,1.1fr)_5.5rem_2rem]">
             {(() => {
-                // Annotation A: merged alternatives render ONE removable box per
-                // (subcategory · work type), stacked. Pair 0 (highlighted)
-                // prices the line — removing a box promotes the next pair; the
-                // last one removes the line. Free-form lines keep the input.
-                if (!it.option_pairs?.length) return null;
+                // Use saved catalogue IDs, never an old combined display title, to identify priced work.
+                if (!it.option_pairs?.length && !it.subcategory_id) return null;
                 const boxes = linePairBoxes(it, workSubcategories, contractorRates);
                 const removePairBox = (index: number) => {
                     const patch = removeOptionPair(it, index, workSubcategories, contractorRates);
@@ -1318,7 +1316,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                 </div>);
             })()}
             {(() => {
-                if (it.option_pairs?.length) return null;
+                if (it.option_pairs?.length || it.subcategory_id) return null;
                 return (<textarea rows={2} defaultValue={it.title} aria-label="Item title" ref={(node) => { if (node && !CSS.supports("field-sizing", "content")) { node.style.height = "auto"; node.style.height = `${node.scrollHeight}px`; } }} onInput={(e) => { if (!CSS.supports("field-sizing", "content")) { e.currentTarget.style.height = "auto"; e.currentTarget.style.height = `${e.currentTarget.scrollHeight}px`; } }} onBlur={(e) => { if (e.target.value !== it.title)
                 updateQuotationItem(quotationId, it.id, { title: e.target.value }); }} className="col-span-4 min-w-0 w-full resize-none [field-sizing:content] whitespace-pre-wrap break-words rounded border border-transparent bg-transparent px-1 py-0.5 font-medium leading-relaxed text-foreground hover:border-border focus:border-primary focus:bg-card focus:outline-none sm:col-span-1 sm:col-start-1 sm:row-start-1"/>);
             })()}
@@ -1347,7 +1345,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                   </span>))}
                 </div>);
             })()}
-            <div className="flex items-center gap-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono hover:border-border focus-within:border-primary focus-within:bg-card sm:col-start-3 sm:row-start-1" title={it.area_chips?.length ? "Sum of the area boxes — remove an area box to reduce it" : undefined}>
+            <div className="col-start-2 row-start-3 flex min-w-0 items-center gap-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono hover:border-border focus-within:border-primary focus-within:bg-card sm:col-start-3 sm:row-start-1" title={it.area_chips?.length ? "Sum of the area boxes — remove an area box to reduce it" : undefined}>
               <span aria-hidden className="text-[10px] font-semibold text-muted-foreground">×</span>
               {it.area_chips?.length ? (<input type="number" value={areaChipQuantity(it.area_chips)} aria-label="Quantity (sum of areas)" readOnly className="min-w-0 w-full cursor-default bg-transparent text-right outline-none"/>) : (<input type="number" defaultValue={it.quantity} aria-label="Quantity" min="0" step="0.01" onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== it.quantity)
             updateQuotationItem(quotationId, it.id, { quantity: v }); }} className="min-w-0 w-full bg-transparent text-right outline-none"/>)}
@@ -1357,7 +1355,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                 // (material + labour); the highlighted primary drives the line.
                 const pairBoxes = it.option_pairs?.length ? linePairBoxes(it, workSubcategories, contractorRates) : null;
                 if (!pairBoxes) return null;
-                return (<div className="flex min-w-0 flex-col items-stretch gap-0.5 rounded px-1 py-0.5 font-mono sm:col-span-1 sm:col-start-2 sm:row-start-1">
+                return (<div className="col-start-1 row-start-3 flex min-w-0 flex-col items-stretch gap-0.5 rounded px-1 py-0.5 font-mono sm:col-span-1 sm:col-start-2 sm:row-start-1">
                   {pairBoxes.map((box, index) => (<div key={index} className={cn("flex items-center gap-1 rounded border border-transparent hover:border-border focus-within:border-primary focus-within:bg-card", box.primary ? "text-foreground" : "text-muted-foreground")}>
                     <span aria-hidden className="text-[10px] font-semibold">₹</span>
                     <input type="number" defaultValue={box.rate ?? ""} placeholder="—" min="0" step="1" aria-label={`Rate for ${box.label}${box.primary ? " (drives this line)" : ""}`} onBlur={(e) => { const v = parseFloat(e.target.value); if (isNaN(v) || v === box.rate)
@@ -1367,7 +1365,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
             })()}
             {(() => {
                 if (it.option_pairs?.length) return null;
-                return (<div className="flex items-center gap-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono text-muted-foreground hover:border-border focus-within:border-primary focus-within:bg-card focus-within:text-foreground sm:col-start-2 sm:row-start-1">
+                return (<div className="col-start-1 row-start-3 flex min-w-0 items-center gap-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono text-muted-foreground hover:border-border focus-within:border-primary focus-within:bg-card focus-within:text-foreground sm:col-start-2 sm:row-start-1">
                   <span aria-hidden className="text-[10px] font-semibold">₹</span>
                   <input type="number" defaultValue={it.rate} aria-label="Rate" min="0" step="1" onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== it.rate)
                 updateQuotationItem(quotationId, it.id, { rate: v }); }} className="min-w-0 w-full bg-transparent text-right outline-none"/>
@@ -1375,12 +1373,12 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
             })()}
             {(() => {
                 const pairBoxes = it.option_pairs?.length ? linePairBoxes(it, workSubcategories, contractorRates) : null;
-                if (!pairBoxes) return (<span className="py-0.5 text-right font-mono font-semibold text-foreground sm:col-start-5 sm:row-start-1">{formatINR(it.amount)}</span>);
-                return (<div className="flex min-w-0 flex-col items-end gap-0.5 py-0.5 font-mono sm:col-span-1 sm:col-start-5 sm:row-start-1">
+                if (!pairBoxes) return (<span className="col-start-3 row-start-3 py-0.5 text-right font-mono font-semibold text-foreground sm:col-start-5 sm:row-start-1">{formatINR(it.amount)}</span>);
+                return (<div className="col-start-3 row-start-3 flex min-w-0 flex-col items-end gap-0.5 py-0.5 font-mono sm:col-span-1 sm:col-start-5 sm:row-start-1">
                   {pairBoxes.map((box, index) => (<span key={index} className={cn("text-right", box.primary ? "font-semibold text-foreground" : "text-muted-foreground")} title={box.primary ? "Prices this line" : `If this option is chosen: ${box.label}`}>{box.rate === undefined ? "—" : formatINR(box.amount ?? 0)}</span>))}
                 </div>);
             })()}
-            <div className="flex items-center justify-center gap-0.5 sm:col-start-6 sm:row-start-1">
+            <div className="col-start-4 row-start-3 flex items-center justify-center gap-0.5 sm:col-start-6 sm:row-start-1">
               <button type="button" onClick={() => setItemFilesId(it.id)} className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Files for ${it.title}`} title="Line-item files"><Paperclip className="h-3 w-3"/></button>
               <button type="button" onClick={() => { removeQuotationItem(quotationId, it.id); toast.success("Item removed"); }} className="flex items-center justify-center rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Remove ${it.title}`}>
                 <Trash2 className="h-3.5 w-3.5"/>
@@ -1388,7 +1386,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
             </div>
           </div></React.Fragment>)))}
 
-      <div className="flex items-center justify-between gap-2 bg-muted/30 px-3 py-2 text-xs font-bold sm:grid sm:grid-cols-[1.6fr_0.6fr_0.5fr_1.1fr_0.6fr_0.3fr] sm:gap-2">
+      <div className="flex items-center justify-between gap-2 bg-muted/30 px-3 py-2 text-xs font-bold sm:grid sm:grid-cols-[minmax(0,1.6fr)_5.5rem_4rem_minmax(0,1.1fr)_5.5rem_2rem] sm:gap-2">
         <span>Subtotal</span>
         <span className="hidden sm:block" />
         <span className="hidden sm:block" />
