@@ -199,6 +199,29 @@ function linkedQuotations(db: RDashDatabase, workRequiredId: string) {
   );
 }
 
+/** Read-time reconciliation also covers older records whose saved stage predates their activity. */
+export function effectiveWorkRequiredStatus(db: RDashDatabase, work: WorkRequired): WorkRequiredStatus {
+  if (["on_hold", "lost", "completed"].includes(work.status)) return work.status;
+  let stage = work.status;
+  const advance = (target: WorkRequiredStatus) => { stage = advanceWorkRequiredLifecycleStatus(stage, target); };
+  if (hasActiveVisit(db, work.id)) advance("visit_scheduled");
+  if (hasVerifiedMeasurement(db, work)) advance("measurement_done");
+  const quotes = linkedQuotations(db, work.id).filter((quote) => !quote.superseded_by_quotation_id);
+  if (quotes.some((quote) => quote.status === "draft")) advance("quotation_in_progress");
+  if (quotes.some((quote) => quote.status === "sent")) advance("quotation_sent");
+  const scopes = db.acceptedScopes.filter((scope) => scope.work_required_id === work.id && scope.status !== "cancelled");
+  if (scopes.length || quotes.some((quote) => quote.status === "accepted")) advance("accepted");
+  if (scopes.some((scope) => scope.status === "contractor_bidding")) advance("contractor_bidding");
+  if (scopes.some((scope) => ["awarded", "in_work_order"].includes(scope.status))) advance("awarded");
+  const orders = db.workOrders.filter((order) => order.work_required_ids.includes(work.id)
+    && !["cancelled", "abandoned"].includes(order.status));
+  if (orders.some((order) => order.status === "in_progress")) advance("in_progress");
+  else if (orders.some((order) => order.status === "on_hold")) return "on_hold";
+  else if (orders.some((order) => order.status === "scheduled")) advance("awarded");
+  else if (orders.length && orders.every((order) => order.status === "completed")) advance("completed");
+  return stage;
+}
+
 function hasActiveVisit(db: RDashDatabase, workRequiredId: string): boolean {
   return db.visits.some(
     (visit) =>
@@ -269,6 +292,12 @@ export function evaluateWorkRequiredTransition(
   const targetIndex = stageIndex(target);
   const isResuming = work.status === "lost" || work.status === "on_hold";
   const isBackward = currentIndex >= 0 && targetIndex >= 0 && targetIndex < currentIndex;
+
+  // Older quotations can legitimately exist without a visit or measurement.
+  // Resume at the evidenced milestone, never invent missing earlier activity.
+  if (isResuming && target === effectiveWorkRequiredStatus(db, { ...work, status: "new" })) {
+    return { allowed: true, requiresReason: true };
+  }
 
   if (targetIndex < 0) {
     return { allowed: false, requiresReason: false, reason: "Unsupported sales stage." };

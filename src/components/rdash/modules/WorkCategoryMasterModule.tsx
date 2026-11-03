@@ -787,7 +787,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
         });
         toast.success("Safe catalogue repair completed.");
     }
-    return (<div className="flex flex-col gap-5">
+    return (<div className="flex min-w-0 max-w-full flex-col gap-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><Layers3 className="h-5 w-5"/></span>
@@ -863,7 +863,7 @@ function CatalogueView({ master, query, setQuery, filteredCategories, workByCate
 }) {
     const needle = normalizeCatalogName(query);
     const [editingCategoryId, setEditingCategoryId] = React.useState<string | null>(null);
-    return <div className="flex flex-col gap-3">
+    return <div className="flex min-w-0 max-w-full flex-col gap-3">
     <div className="flex flex-wrap items-center gap-2">
       <div className="relative w-full max-w-md">
         <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"/>
@@ -878,7 +878,7 @@ function CatalogueView({ master, query, setQuery, filteredCategories, workByCate
             const isExpanded = expanded[category.id] || Boolean(needle);
             const works = (workByCategory.get(category.id) || []).filter((work) => !needle || normalizeCatalogName(category.name).includes(needle) || normalizeCatalogName(work.name).includes(needle) || normalizeCatalogName(work.notes).includes(needle) || (scopesByWork.get(work.id) || []).some((scope) => normalizeCatalogName(articleFor(master, scope.article_id)?.name).includes(needle)));
             const materialCount = works.reduce((sum, work) => sum + (scopesByWork.get(work.id) || []).length, 0);
-            return <section key={category.id} className="overflow-hidden rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
+            return <section key={category.id} className="min-w-0 max-w-full overflow-hidden rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
         <div className="flex flex-wrap items-center gap-2 border-b border-border bg-gradient-to-r from-muted/70 to-transparent px-3 py-2.5">
           <button type="button" onClick={() => setExpanded((current) => ({ ...current, [category.id]: !isExpanded }))} className="flex min-w-0 w-full sm:w-auto sm:min-w-0 sm:flex-1 items-center gap-2 text-left">
             {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground"/> : <ChevronRight className="h-4 w-4 text-muted-foreground"/>}
@@ -936,7 +936,7 @@ function WorkItemCard({ master, work, parentActive, scopes, variantsByArticle, u
     const [open, setOpen] = React.useState(false);
     const [materialsOpen, setMaterialsOpen] = React.useState(false);
     const [editingName, setEditingName] = React.useState(false);
-    return <article className="rounded-xl border border-border bg-background/50 p-3">
+    return <article className="min-w-0 rounded-xl border border-border bg-background/50 p-3">
     <div className="flex flex-wrap items-start justify-between gap-2">
       <button type="button" onClick={() => setOpen((value) => !value)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
         {open ? <ChevronDown className="h-4 w-4 text-muted-foreground"/> : <ChevronRight className="h-4 w-4 text-muted-foreground"/>}
@@ -967,20 +967,20 @@ function WorkItemCard({ master, work, parentActive, scopes, variantsByArticle, u
     </div>
 
     {open ? <>
-      <div className="mt-2 overflow-x-auto rounded-lg border border-border">
-        <div className="grid min-w-[980px] grid-cols-[minmax(150px,1.1fr)_minmax(160px,1fr)_minmax(120px,.8fr)_minmax(120px,.8fr)_minmax(120px,.8fr)_minmax(190px,1.3fr)_80px] gap-2 bg-muted/40 px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+      <div className="mt-2 min-w-0 max-w-full overflow-x-auto rounded-lg border border-border">
+        <div className="hidden min-w-[980px] grid-cols-[minmax(150px,1.1fr)_minmax(160px,1fr)_minmax(120px,.8fr)_minmax(120px,.8fr)_minmax(120px,.8fr)_minmax(190px,1.3fr)_80px] gap-2 bg-muted/40 px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground 2xl:grid">
           <span>Work type</span><span>Execution unit</span><span>Material rate</span><span>Labour rate</span><span>Total rate</span><span>Notes</span><span className="sticky right-0 bg-muted/95 text-right">Actions</span>
         </div>
         {workTypes.map((workType) => {
             const average = contractorWorkTypeAverages(master.contractorRates, work.id, workType.id);
-            return <div key={workType.id} className="grid min-w-[980px] grid-cols-[minmax(150px,1.1fr)_minmax(160px,1fr)_minmax(120px,.8fr)_minmax(120px,.8fr)_minmax(120px,.8fr)_minmax(190px,1.3fr)_80px] items-center gap-2 border-t border-border px-2.5 py-2">
-              <div className="min-w-0"><Input disabled={saving || !editable || !isActiveWorkTaxonomy(workType)} defaultValue={workType.name} aria-label={`Work type for ${work.name}`} onBlur={(event) => event.target.value !== workType.name && updateWorkType(work.id, workType.id, { name: event.target.value })} className="h-8 font-semibold"/>{!isActiveWorkTaxonomy(workType) ? <span className="mt-1 block text-[9px] font-semibold text-muted-foreground">Archived</span> : null}</div>
-              <NativeSelect disabled={saving || !editable || !isActiveWorkTaxonomy(workType)} value={workType.unit_id || work.unit_id || "pcs"} onChange={(event) => updateWorkType(work.id, workType.id, { unit_id: event.target.value })} className="h-8">{master.units.map((unit) => <option key={unit.id} value={unit.id}>{unitLabel(master, unit.id)}</option>)}</NativeSelect>
-              <div className="flex h-8 items-center rounded-md border border-input bg-muted/50 px-3 font-mono text-sm font-bold" aria-label={`${workType.name} average material rate`}>{average.material_rate == null ? "—" : `Rs ${Math.round(average.material_rate).toLocaleString("en-IN")}`}</div>
-              <div className="flex h-8 items-center rounded-md border border-input bg-muted/50 px-3 font-mono text-sm font-bold" aria-label={`${workType.name} average labour rate`}>{average.labour_rate == null ? "—" : `Rs ${Math.round(average.labour_rate).toLocaleString("en-IN")}`}</div>
-              <div className="flex h-8 items-center rounded-md border border-input bg-muted/50 px-3 font-mono text-sm font-bold">{average.total_rate == null ? "—" : `Rs ${Math.round(average.total_rate).toLocaleString("en-IN")}`}</div>
-              <Input disabled={saving || !editable || !isActiveWorkTaxonomy(workType)} defaultValue={workType.notes || ""} placeholder="Work-type note" aria-label={`${workType.name} notes`} onBlur={(event) => event.target.value !== (workType.notes || "") && updateWorkType(work.id, workType.id, { notes: event.target.value })} className="h-8"/>
-              <div className="sticky right-0 flex justify-end bg-background/95"><Button size="icon" variant="ghost" disabled={saving || !editable} onClick={() => setWorkTypeArchived(work.id, workType.id, isActiveWorkTaxonomy(workType))} aria-label={`${isActiveWorkTaxonomy(workType) ? "Archive" : "Restore"} ${workType.name}`}>{isActiveWorkTaxonomy(workType) ? <Archive className="h-4 w-4"/> : <ArchiveRestore className="h-4 w-4 text-primary"/>}</Button><Button size="icon" variant="ghost" disabled={saving} onClick={() => removeWorkType(work.id, workType.id)} aria-label={`Delete ${workType.name}`}><Trash2 className="h-4 w-4 text-destructive"/></Button></div>
+            return <div key={workType.id} className="work-type-rate-row grid min-w-0 grid-cols-1 items-center gap-2 border-t border-border px-2.5 py-3 sm:grid-cols-2 2xl:min-w-[980px] 2xl:grid-cols-[minmax(150px,1.1fr)_minmax(160px,1fr)_minmax(120px,.8fr)_minmax(120px,.8fr)_minmax(120px,.8fr)_minmax(190px,1.3fr)_80px]">
+              <div className="min-w-0"><span className="mb-1 block text-[10px] font-semibold uppercase text-muted-foreground 2xl:hidden">Work type</span><div className="min-w-0"><Input disabled={saving || !editable || !isActiveWorkTaxonomy(workType)} defaultValue={workType.name} aria-label={`Work type for ${work.name}`} onBlur={(event) => event.target.value !== workType.name && updateWorkType(work.id, workType.id, { name: event.target.value })} className="h-8 font-semibold"/>{!isActiveWorkTaxonomy(workType) ? <span className="mt-1 block text-[9px] font-semibold text-muted-foreground">Archived</span> : null}</div></div>
+              <div className="min-w-0"><span className="mb-1 block text-[10px] font-semibold uppercase text-muted-foreground 2xl:hidden">Execution unit</span><NativeSelect disabled={saving || !editable || !isActiveWorkTaxonomy(workType)} value={workType.unit_id || work.unit_id || "pcs"} onChange={(event) => updateWorkType(work.id, workType.id, { unit_id: event.target.value })} className="h-8">{master.units.map((unit) => <option key={unit.id} value={unit.id}>{unitLabel(master, unit.id)}</option>)}</NativeSelect></div>
+              <div className="min-w-0"><span className="mb-1 block text-[10px] font-semibold uppercase text-muted-foreground 2xl:hidden">Material rate</span><div className="flex h-8 items-center rounded-md border border-input bg-muted/50 px-3 font-mono text-sm font-bold" aria-label={`${workType.name} average material rate`}>{average.material_rate == null ? "—" : `Rs ${Math.round(average.material_rate).toLocaleString("en-IN")}`}</div></div>
+              <div className="min-w-0"><span className="mb-1 block text-[10px] font-semibold uppercase text-muted-foreground 2xl:hidden">Labour rate</span><div className="flex h-8 items-center rounded-md border border-input bg-muted/50 px-3 font-mono text-sm font-bold" aria-label={`${workType.name} average labour rate`}>{average.labour_rate == null ? "—" : `Rs ${Math.round(average.labour_rate).toLocaleString("en-IN")}`}</div></div>
+              <div className="min-w-0"><span className="mb-1 block text-[10px] font-semibold uppercase text-muted-foreground 2xl:hidden">Total rate</span><div className="flex h-8 items-center rounded-md border border-input bg-muted/50 px-3 font-mono text-sm font-bold">{average.total_rate == null ? "—" : `Rs ${Math.round(average.total_rate).toLocaleString("en-IN")}`}</div></div>
+              <div className="min-w-0"><span className="mb-1 block text-[10px] font-semibold uppercase text-muted-foreground 2xl:hidden">Notes</span><Input disabled={saving || !editable || !isActiveWorkTaxonomy(workType)} defaultValue={workType.notes || ""} placeholder="Work-type note" aria-label={`${workType.name} notes`} onBlur={(event) => event.target.value !== (workType.notes || "") && updateWorkType(work.id, workType.id, { notes: event.target.value })} className="h-8"/></div>
+              <div className="min-w-0"><span className="mb-1 block text-[10px] font-semibold uppercase text-muted-foreground 2xl:hidden">Actions</span><div className="sticky right-0 flex justify-end bg-background/95"><Button size="icon" variant="ghost" disabled={saving || !editable} onClick={() => setWorkTypeArchived(work.id, workType.id, isActiveWorkTaxonomy(workType))} aria-label={`${isActiveWorkTaxonomy(workType) ? "Archive" : "Restore"} ${workType.name}`}>{isActiveWorkTaxonomy(workType) ? <Archive className="h-4 w-4"/> : <ArchiveRestore className="h-4 w-4 text-primary"/>}</Button><Button size="icon" variant="ghost" disabled={saving} onClick={() => removeWorkType(work.id, workType.id)} aria-label={`Delete ${workType.name}`}><Trash2 className="h-4 w-4 text-destructive"/></Button></div></div>
             </div>;
         })}
         <div className="border-t border-border p-2">

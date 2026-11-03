@@ -2,6 +2,7 @@ import type { ContextCustomerTab } from "./store/ui-types";
 
 const CUSTOMER_TABS = new Set<ContextCustomerTab>([
   "overview",
+  "pipeline",
   "sites",
   "tasks",
   "quotations",

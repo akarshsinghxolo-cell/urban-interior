@@ -37,7 +37,7 @@ const LIVE_WORK_ORDER_STATUSES = new Set(["scheduled", "in_progress", "on_hold"]
  * pair-locked duplicate merge. Opening a customer still lands in the restored
  * full portfolio drawer.
  */
-export function CustomerDesk() {
+export function CustomerDesk({ initialView = "customers" }: { initialView?: "customers" | "pipeline" }) {
   const db = useRDashStore((state) => state.db);
   const selectedCustomerId = useRDashStore((state) => state.selectedCustomerId);
   const selectCustomer = useRDashStore((state) => state.selectCustomer);
@@ -45,6 +45,10 @@ export function CustomerDesk() {
   const [query, setQuery] = React.useState("");
   const [sort, setSort] = React.useState("newest");
   const [filter, setFilter] = React.useState("all");
+  const [view, setView] = React.useState(initialView);
+  const [stage, setStage] = React.useState("all");
+  const openContextCustomer = useRDashStore((state) => state.openContextCustomer);
+  const progressByCustomer = React.useMemo(() => new Map(db.customers.map((customer) => [customer.id, customerProgress(db, customer.id)])), [db]);
   const [customerForm, setCustomerForm] = React.useState<{ editId?: string } | null>(null);
   const actionsForCustomer = (id: string) => buildCustomerActions(id, useRDashStore.getState(), {
     onOpen: () => {
@@ -56,6 +60,7 @@ export function CustomerDesk() {
 
   const filtered = React.useMemo(() => db.customers
     .filter((customer) => customerMatchesQuery(db, customer, query))
+    .filter((customer) => view !== "pipeline" || stage === "all" || progressByCustomer.get(customer.id)?.label === stage)
     .filter((customer) => filter === "all"
       || (filter === "with-site"
         ? db.sites.some((site) => site.customer_id === customer.id)
@@ -68,7 +73,7 @@ export function CustomerDesk() {
         ? b.name.localeCompare(a.name)
         : sort === "oldest"
           ? a.created_at.localeCompare(b.created_at)
-          : b.created_at.localeCompare(a.created_at)), [db, filter, query, sort]);
+          : b.created_at.localeCompare(a.created_at)), [db, filter, query, sort, view, stage, progressByCustomer]);
 
   // An absent or stale selection stays absent. The historical portfolio is
   // mounted only after the operator explicitly selects a real customer.
@@ -110,6 +115,11 @@ export function CustomerDesk() {
 
   return (
     <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-2" aria-label="Customer Desk views">
+        <Button size="sm" variant={view === "customers" ? "default" : "outline"} onClick={() => setView("customers")}>Customers</Button>
+        <Button size="sm" variant={view === "pipeline" ? "default" : "outline"} onClick={() => setView("pipeline")}>Sales pipeline</Button>
+        {view === "pipeline" && <p className="text-xs text-muted-foreground">One card per customer. Open a card for work-by-work progress and next actions.</p>}
+      </div>
       <CustomerSearchBar query={query} setQuery={setQuery} onAdd={() => setCustomerForm({})} duplicateControl={<CustomerDuplicateMergeControl />} />
       <div className="rd-metric-grid">
         <MetricCard label="Customers" value={filtered.length} hint={query || filter !== "all" ? "matching filters" : "visible now"} />
@@ -117,9 +127,15 @@ export function CustomerDesk() {
         <MetricCard label="Live work orders" value={liveWorkOrders} tone="success" />
       </div>
       <SectionHeader title="Customers" count={filtered.length} action={listControls} />
+      {view === "pipeline" && <label className="flex flex-wrap items-center gap-2 text-xs font-semibold">Sales stage
+        <select aria-label="Filter sales stage" value={stage} onChange={(event) => setStage(event.target.value)} className="h-9 max-w-full rounded-md border border-input bg-card px-2">
+          <option value="all">All stages</option>
+          {Array.from(new Set(Array.from(progressByCustomer.values()).map((progress) => progress.label))).map((label) => <option key={label} value={label}>{label} ({Array.from(progressByCustomer.values()).filter((progress) => progress.label === label).length})</option>)}
+        </select>
+      </label>}
       <div className="grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3">
         {filtered.map((customer) => {
-          const progress = customerProgress(db, customer.id);
+          const progress = progressByCustomer.get(customer.id)!;
           const sites = db.sites.filter((site) => site.customer_id === customer.id);
           const primarySite = sites[0];
           const locationLabel = sites.length > 1
@@ -132,7 +148,7 @@ export function CustomerDesk() {
               actions={actionsForCustomer(customer.id)}
               onSelect={() => {
                 selectCustomer(customer.id);
-                openDetail("customer", customer.id, "customerDesk");
+                openContextCustomer(customer.id, view === "pipeline" ? "pipeline" : "overview", "customerDesk");
               }}
               className={cn("min-h-[140px] rounded-[var(--panel-radius)] border border-border bg-card p-3 shadow-card transition-all hover:border-primary/30 hover:shadow-soft", active && "ring-2 ring-ring/40")}
             >

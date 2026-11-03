@@ -139,6 +139,8 @@ export const MODULE_GROUPS: ModuleGroup[] = [
         renderer: "customer-desk",
         dataSource: "customers",
         submodules: [
+          { id: "salesPipeline", label: "Sales Pipeline", renderer: "sales-pipeline", dataSource: "customers", hint: "Customer sales progress from linked visits, measurements and quotations" },
+          { id: "lostClosedReview", label: "Lost / Closed Review", renderer: "lost-closed-review", dataSource: "quotations" },
           {
             id: "customerWorkRequired",
             label: "Work Required",
@@ -187,23 +189,6 @@ export const MODULE_GROUPS: ModuleGroup[] = [
             renderer: "calendar",
             dataSource: "tasks",
             filter: { view: "recurring" },
-          },
-        ],
-      },
-      {
-        id: "salesPipeline",
-        label: "Sales Pipeline",
-        description: "Enquiries, sales stages, drag-and-drop kanban and conversion tracking",
-        icon: "📈",
-        renderer: "sales-pipeline",
-        dataSource: "customers",
-        submodules: [
-          {
-            id: "lostClosedReview",
-            label: "Lost / Closed Review",
-            renderer: "lost-closed-review",
-            dataSource: "quotations",
-            hint: "Post-mortem on lost quotations, lost requirements and cancelled work orders",
           },
         ],
       },
@@ -621,7 +606,6 @@ export const MODULE_GROUPS: ModuleGroup[] = [
 const MODULE_DISPLAY_ORDER = [
   "customerDesk",
   "workdesk",
-  "salesPipeline",
   "fieldOperations",
   "siteExecution",
   "quotationDesk",

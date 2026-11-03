@@ -1,6 +1,7 @@
 import { indianWhatsAppDialDigits, isValidIndianMobile } from "./phone-validation";
 import type { WorkRequired, WorkRequiredStatus, RDashDatabase, WorkOrder } from "./types";
 import { indiaDate } from "./date";
+import { effectiveWorkRequiredStatus } from "./work-required-lifecycle";
 
 export type CustomerProgress = {
     key: "new" | "contacted" | "visit" | "measurement" | "quote" | "decision" | "negotiation" | "accepted" | "execution" | "on_hold" | "lost" | "completed";
@@ -25,7 +26,7 @@ function latestWorkOrder(workOrders: WorkOrder[]) {
     })[0];
 }
 
-function progressForWorkRequired(workRequired: WorkRequired | undefined): CustomerProgress {
+export function progressForWorkRequired(workRequired: WorkRequired | undefined): CustomerProgress {
     const title = workRequired?.title || "Add work required to begin";
     const status: WorkRequiredStatus | undefined = workRequired?.status;
     switch (status) {
@@ -91,7 +92,8 @@ function withCollectionRisk(base: CustomerProgress, penalty: number): CustomerPr
 }
 
 export function customerProgress(db: RDashDatabase, customerId: string): CustomerProgress {
-    const workRequiredList = db.workRequired.filter((row) => row.customer_id === customerId);
+    const workRequiredList = db.workRequired.filter((row) => row.customer_id === customerId)
+        .map((row) => ({ ...row, status: effectiveWorkRequiredStatus(db, row) }));
     const activeWorkRequired = latestWorkRequired(
         workRequiredList.filter((row) => row.status !== "lost" && row.status !== "completed"),
     );

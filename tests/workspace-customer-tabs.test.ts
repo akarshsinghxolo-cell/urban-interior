@@ -9,6 +9,7 @@ describe("workspace customer-tab query state", () => {
   test("covers the restored Customer portfolio tabs", () => {
     expect(WORKSPACE_CUSTOMER_TABS).toEqual([
       "overview",
+      "pipeline",
       "sites",
       "tasks",
       "quotations",

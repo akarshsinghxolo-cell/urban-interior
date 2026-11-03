@@ -50,6 +50,7 @@ import { CustomerWorkRequiredDialog as WorkRequiredCreateDialog } from "../custo
 import { CustomerWorkCaptureDialog } from "../customer/CustomerWorkCaptureDialog";
 import { EntityFilesCard } from "../EntityFilesCard";
 import { RecordPaymentDialog } from "../ActionDialogs";
+import { CustomerSalesProgress } from "../customer/CustomerSalesProgress";
 
 /**
  * Customer 360° portfolio.
@@ -183,6 +184,7 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
 
   const tabs: Array<{ key: ContextCustomerTab; label: string; icon: React.ReactNode }> = [
     { key: "overview", label: "Overview", icon: <Activity className="h-3.5 w-3.5" /> },
+    { key: "pipeline", label: "Sales pipeline", icon: <Activity className="h-3.5 w-3.5" /> },
     { key: "sites", label: `Sites (${sites.length})`, icon: <Building className="h-3.5 w-3.5" /> },
     { key: "tasks", label: `Tasks (${tasks.length})`, icon: <ListChecks className="h-3.5 w-3.5" /> },
     { key: "quotations", label: `Quotations (${quotations.length})`, icon: <FileText className="h-3.5 w-3.5" /> },
@@ -247,6 +249,7 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
       </div>
 
       <div className="mt-4">
+        {tab === "pipeline" && <CustomerSalesProgress customerId={customerId} />}
         {tab === "overview" && (
           <div className="space-y-4">
             <section>

@@ -21,7 +21,7 @@ describe("Customer Desk restored-feature contracts", () => {
     expect(shell).toContain("const selected = selectedCustomerId");
     expect(shell).toContain("customer.id === selectedCustomerId");
     expect(shell).not.toContain("|| db.customers[0]");
-    expect(shell).toContain('openDetail("customer", customer.id, "customerDesk")');
+    expect(shell).toContain('openContextCustomer(customer.id, view === "pipeline" ? "pipeline" : "overview", "customerDesk")');
   });
 
   test("safe shell keeps phone optional and headline counters truthful", async () => {

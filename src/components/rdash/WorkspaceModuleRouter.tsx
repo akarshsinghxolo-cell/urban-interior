@@ -62,7 +62,6 @@ const VendorPriceMasterModule = React.lazy(() => import("./modules/VendorPriceMa
 const MediaLibraryModule = React.lazy(() => import("./modules/MediaLibraryModule").then((module) => ({ default: module.MediaLibraryModule })));
 const GoogleDriveManagerModule = React.lazy(() => import("./modules/GoogleDriveManagerModule").then((module) => ({ default: module.GoogleDriveManagerModule })));
 const UserApprovalsModule = React.lazy(() => import("./modules/UserApprovalsModule").then((module) => ({ default: module.UserApprovalsModule })));
-const SalesPipelineModule = React.lazy(() => import("./modules/SalesPipelineModule").then((module) => ({ default: module.SalesPipelineModule })));
 const LostClosedReviewModule = React.lazy(() => import("./modules/MiscModules").then((module) => ({ default: module.LostClosedReviewModule })));
 const UnifiedThreadInboxModule = React.lazy(() => import("./modules/UnifiedThreadInboxModule").then((module) => ({ default: module.UnifiedThreadInboxModule })));
 const IntegrityModule = React.lazy(() => import("./modules/IntegrityModule").then((module) => ({ default: module.IntegrityModule })));
@@ -217,7 +216,7 @@ function WorkspaceModuleRouter({ moduleId }: { moduleId: string }) {
         case "quotation-config": return <QuotationConfigModule config={route.filter?.config}/>;
         case "staff-board": return <MastersModule submodule="staff" />;
         case "gst-returns": return <GstReturnsModule />;
-        case "sales-pipeline": return <SalesPipelineModule />;
+        case "sales-pipeline": return <CustomerDesk initialView="pipeline" />;
         case "lost-closed-review": return <LostClosedReviewModule />;
         case "commissions": return <CommissionsWorkspaceModule />;
         case "unified-thread-inbox": return <UnifiedThreadInboxModule />;

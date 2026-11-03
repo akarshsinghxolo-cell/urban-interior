@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/components/ui/select";
 import { useRDashStore } from "@/lib/rdash/store";
+import { customerMaterialOptions } from "@/lib/rdash/customer-material-options";
 import { toast } from "sonner";
 import { indianWhatsAppDialDigits, isValidIndianMobile, sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
 import { notifyCreated } from "@/lib/rdash/notify";
@@ -310,166 +311,63 @@ function ShareChannel({ value, onChange, id }: {
     onChange: (value: string) => void;
     id: string;
 }) { return <div className="grid gap-1.5"><Label htmlFor={id}>Channel</Label><Select value={value} onValueChange={onChange}><SelectTrigger id={id} className="w-full"><SelectValue /></SelectTrigger><SelectContent>{CHANNELS.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent></Select></div>; }
-const MATERIAL_GROUPS: {
-    category: string;
-    icon: string;
-    options: {
-        id: string;
-        name: string;
-        note?: string;
-    }[];
-}[] = [
-    {
-        category: "Plywood",
-        icon: "🪵",
-        options: [
-            { id: "ply-bwp-marine", name: "BWP Marine", note: "Boiling-water proof — wet zones" },
-            { id: "ply-bwr-commercial", name: "BWR Commercial", note: "Boiling-water resistant — general" },
-        ],
-    },
-    {
-        category: "Hardware",
-        icon: "🔩",
-        options: [
-            { id: "hw-softclose-hinges", name: "Soft-close Hinges", note: "Hettich / Hafele" },
-            { id: "hw-telescopic-channels", name: "Telescopic Channels", note: "Full-extension drawer slides" },
-            { id: "hw-lift-up-systems", name: "Lift-up Systems", note: "Aventos HK / HF" },
-        ],
-    },
-    {
-        category: "Finish",
-        icon: "🎨",
-        options: [
-            { id: "fn-acrylic", name: "Acrylic", note: "High-gloss mirror finish" },
-            { id: "fn-laminate", name: "Laminate", note: "Premium textured laminates" },
-            { id: "fn-pu", name: "PU Paint", note: "Polyurethane matte/satin" },
-            { id: "fn-veneer", name: "Natural Veneer", note: "Real wood veneer + polish" },
-        ],
-    },
-];
-function SendMaterialOptionsDialog({ open, onOpenChange, customerId, }: {
+function SendMaterialOptionsDialog({ open, onOpenChange, customerId }: {
     open: boolean;
-    onOpenChange: (v: boolean) => void;
+    onOpenChange: (value: boolean) => void;
     customerId?: string;
 }) {
-    const closeActionDialog = useRDashStore((s) => s.closeActionDialog);
-    const sendComm = useRDashStore((s) => s.sendComm);
+    const db = useRDashStore((state) => state.db);
+    const sendComm = useRDashStore((state) => state.sendComm);
+    const currentUser = useRDashStore((state) => state.currentUser);
     const customer = useCustomer(customerId);
+    const groups = React.useMemo(() => customerMaterialOptions(db, customerId || ""), [db, customerId]);
     const [selected, setSelected] = React.useState<string[]>([]);
-    const [channel, setChannel] = React.useState<string>("WhatsApp");
-    React.useEffect(() => {
-        if (open) {
-            setSelected(MATERIAL_GROUPS.map((g) => g.options[0].id));
-            setChannel("WhatsApp");
-        }
-    }, [open]);
-    function toggle(id: string) {
-        setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-    }
-    function handleSubmit(e: React.FormEvent) {
-        e.preventDefault();
-        if (selected.length === 0) {
-            toast.error("Pick at least one material option to send");
-            return;
-        }
-        // B-7: Resolve selected option names and log this share to the customer's communication
-        // history via sendComm (matching SendCatalogue/SendReference/SendPinterest pattern).
-        const allOptions = MATERIAL_GROUPS.flatMap((g) => g.options);
-        const selectedNames = selected
-            .map((id) => allOptions.find((o) => o.id === id)?.name)
-            .filter(Boolean) as string[];
-        const subject = `${selectedNames.length} material option${selectedNames.length === 1 ? "" : "s"}`;
-        const body = `Hello ${customer?.name || ""},\n\nHere are the material & finish options we discussed:\n${selectedNames.map((n, i) => `${i + 1}. ${n}`).join("\n")}`;
+    const [query, setQuery] = React.useState("");
+    const [channel, setChannel] = React.useState("WhatsApp");
+    const selectedRows = groups.flatMap((group) => group.options.filter((option) => selected.includes(option.id))
+        .map((option) => ({ ...option, work: group.name })));
+    const body = `Hello ${customer?.name || ""},\n\nPlease review these material options for your work:\n\n${selectedRows.map((option, index) => `${index + 1}. ${option.work}: ${option.name}${option.note ? `\n${option.note}` : ""}`).join("\n\n")}\n\nPlease let us know which options you prefer. Final availability and pricing will be confirmed in the quotation.`;
+    function submit(event: React.FormEvent) {
+        event.preventDefault();
+        if (!customer || !selectedRows.length) return;
         try {
-            sendComm({
-                channel: "material",
-                customer_id: customer?.id || "",
-                staff_name: "Owner",
-                subject,
-                body,
-                status: "prepared",
-            });
+            sendComm({ channel: "material", customer_id: customer.id, staff_name: currentUser().name,
+                subject: `${selectedRows.length} material options`, body, status: "prepared" });
+            const outcome = openExternalShare(channel, customer, body);
+            toast.success(outcome, { description: "Saved as prepared, not delivered. Review and send in your messaging app." });
+            onOpenChange(false);
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Could not prepare material options.");
         }
-        catch (error) {
-            // Don't block the user's share action if logging fails — surface as a warning.
-            toast.warning(error instanceof Error ? error.message : "Could not log communication to customer history.");
-        }
-        toast.info(`Material options prepared for ${channel} — not sent automatically`, {
-            description: `${selected.length} options selected${customer ? ` → ${customer.name}` : ""}`,
-        });
-        onOpenChange(false);
-        closeActionDialog();
     }
-    return (<Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[520px]">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-primary">
-              <Layers className="h-4 w-4"/>
-            </span>
-            Send Material Options
-          </DialogTitle>
-          <DialogDescription>
-            Share material & finish options{customer ? ` with ${customer.name}` : ""}. Pick one or more.
-          </DialogDescription>
-        </DialogHeader>
-
-        <form onSubmit={handleSubmit} className="grid gap-4">
-          <fieldset className="grid gap-3">
-            <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Material options by category
-            </legend>
-            <div className="max-h-72 overflow-y-auto rd-scroll grid gap-3 pr-1">
-              {MATERIAL_GROUPS.map((g) => (<div key={g.category} className="rounded-lg border border-border bg-background/60 p-3">
-                  <div className="mb-2 flex items-center gap-1.5">
-                    <span aria-hidden>{g.icon}</span>
-                    <span className="text-xs font-semibold uppercase tracking-wide text-foreground">{g.category}</span>
-                  </div>
-                  <div className="grid gap-1.5">
-                    {g.options.map((o) => {
-                const checked = selected.includes(o.id);
-                return (<label key={o.id} className={"flex cursor-pointer items-center gap-2.5 rounded-md border px-2.5 py-1.5 text-sm transition-colors " +
-                        (checked ? "border-primary/40 bg-primary/[0.04]" : "border-transparent hover:bg-accent/40")}>
-                          <Checkbox checked={checked} onCheckedChange={() => toggle(o.id)} aria-label={o.name}/>
-                          <span className="flex-1">
-                            <span className="font-medium text-foreground">{o.name}</span>
-                            {o.note && (<span className="ml-1.5 text-[11px] text-muted-foreground">· {o.note}</span>)}
-                          </span>
-                        </label>);
+    return <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-[720px]">
+        <DialogHeader><DialogTitle className="flex items-center gap-2"><Layers className="h-4 w-4" />Material options for {customer?.name || "customer"}</DialogTitle>
+          <DialogDescription>Choose from Master Setup materials linked to this customer's Work Required. No sample options or automatic selections.</DialogDescription></DialogHeader>
+        <form onSubmit={submit} className="grid min-w-0 gap-4">
+          <Input aria-label="Search material options" placeholder="Search materials, brands or finishes" value={query} onChange={(event) => setQuery(event.target.value)} />
+          <div className="max-h-72 space-y-3 overflow-y-auto">
+            {groups.map((group) => {
+                const options = group.options.filter((option) => `${group.name} ${option.name} ${option.note}`.toLowerCase().includes(query.toLowerCase()));
+                if (!options.length) return null;
+                return <fieldset key={group.id} className="rounded-lg border border-border p-3">
+                  <legend className="px-1 text-sm font-semibold">{group.name}</legend>
+                  <div className="grid gap-2">{options.map((option) => <label key={option.id} className="flex cursor-pointer items-start gap-2 rounded-md border border-border p-2">
+                    <Checkbox checked={selected.includes(option.id)} aria-label={option.name} onCheckedChange={() => setSelected((ids) => ids.includes(option.id) ? ids.filter((id) => id !== option.id) : [...ids, option.id])} />
+                    <span className="min-w-0 text-sm"><span className="block break-words font-medium">{option.name}</span>{option.note && <span className="mt-1 block break-words text-xs text-muted-foreground">{option.note}</span>}</span>
+                  </label>)}</div>
+                </fieldset>;
             })}
-                  </div>
-                </div>))}
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              {selected.length} option{selected.length === 1 ? "" : "s"} selected
-            </p>
-          </fieldset>
-
-          <div className="grid gap-1.5">
-            <Label htmlFor="mat-channel">Channel</Label>
-            <Select value={channel} onValueChange={setChannel}>
-              <SelectTrigger id="mat-channel" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CHANNELS.map((c) => (<SelectItem key={c.value} value={c.value}>
-                    {c.label}
-                  </SelectItem>))}
-              </SelectContent>
-            </Select>
+            {!groups.length && <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">No materials are linked to this customer's work yet. Add Work Required in Customer Desk, then link articles and variants to those subcategories in Master Setup.</p>}
           </div>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={selected.length === 0}>
-              <Send className="mr-1.5 h-3.5 w-3.5"/> Send
-            </Button>
-          </DialogFooter>
+          <p className="text-xs text-muted-foreground">{selectedRows.length} options selected</p>
+          {selectedRows.length > 0 && <label className="grid gap-1 text-xs font-semibold">Message preview<Textarea aria-label="Material message preview" readOnly value={body} rows={6} /></label>}
+          <ShareChannel value={channel} onChange={setChannel} id="mat-channel" />
+          <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="submit" disabled={!customer || !selectedRows.length}><Send className="mr-1.5 h-3.5 w-3.5" />Prepare share</Button></DialogFooter>
         </form>
       </DialogContent>
-    </Dialog>);
+    </Dialog>;
 }
 export function ActionDialogsHost() {
     const actionDialog = useRDashStore((s) => s.actionDialog);
@@ -486,6 +384,6 @@ export function ActionDialogsHost() {
       <SendCatalogueDialog open={open && type === "send-catalogue"} onOpenChange={onOpenChange} customerId={customerId}/>
       <SendReferenceMediaDialog open={open && type === "send-reference"} onOpenChange={onOpenChange} customerId={customerId}/>
       <SendPinterestBoardDialog open={open && type === "send-pinterest"} onOpenChange={onOpenChange} customerId={customerId}/>
-      <SendMaterialOptionsDialog open={open && type === "send-material"} onOpenChange={onOpenChange} customerId={customerId}/>
+      {open && type === "send-material" && <SendMaterialOptionsDialog key={customerId} open onOpenChange={onOpenChange} customerId={customerId}/>}
     </>);
 }
