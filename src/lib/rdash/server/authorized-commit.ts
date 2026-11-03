@@ -1,3 +1,4 @@
+import { assertDispatchPostingChanges } from "../dispatch-stock";
 import { canonicalMasterRow } from "../canonical-master-data";
 import type { AuditLogEntry, RDashDatabase } from "../types";
 import { validateBusinessData } from "../business-rules";
@@ -337,6 +338,8 @@ export async function commitAuthorizedPostgresOperations(
     commitOperations = canonicalizeContractorRateOperations(current.data, commitOperations);
     const baseline = normalizeWorkspace(current.data);
     const submitted = applyWorkspaceOperations(current.data, commitOperations);
+    try { assertDispatchPostingChanges(current.data, submitted); }
+    catch (error) { throw new Error(`INVALID:${error instanceof Error ? error.message : "Invalid dispatch posting."}`); }
     validateFollowupRecovery(current.data, submitted, commitOperations.filter((op) => op.collection === "tasks").flatMap((op) => (op.upsert || []).map((row) => String(row.id))));
     const rawCandidate = reconcileFollowupRecovery(submitted);
     commitOperations = diffWorkspaceOperations(current.data, rawCandidate);

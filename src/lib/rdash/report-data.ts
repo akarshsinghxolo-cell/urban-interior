@@ -1,15 +1,28 @@
 import type { RDashDatabase } from "./types";
-import { indiaDate } from "./date";
+import { invoiceAgingRows } from "./financial-projections";
 import { allJobPnLs } from "./store/selectors";
+import { indiaDate } from "./date";
+
+export function recentBusinessMonths(count: number, now = new Date()) {
+    const [year, month] = indiaDate(now).split("-").map(Number);
+    return Array.from({ length: count }, (_, index) => {
+        const date = new Date(Date.UTC(year, month - count + index, 1));
+        return { key: date.toISOString().slice(0, 7),
+            label: date.toLocaleString("en-IN", { month: "short", timeZone: "Asia/Kolkata" }),
+            year: date.getUTCFullYear(), monthIdx: date.getUTCMonth() };
+    });
+}
+
+export function monthlyReceiptTotals(db: RDashDatabase, count: number, now = new Date()) {
+    return recentBusinessMonths(count, now).map(month => ({ ...month,
+        value: db.customerReceipts.filter(receipt => indiaDate(receipt.received_at).slice(0, 7) === month.key)
+            .reduce((sum, receipt) => sum + receipt.amount, 0),
+    }));
+}
 
 /** Open invoice balances, on the same Indian business day in every browser. */
 export function agingInvoiceRows(db: RDashDatabase, now: Date = new Date()) {
-    const today = Date.parse(indiaDate(now));
-    return db.invoices.filter(i => ["issued", "overdue", "partial"].includes(i.status) && i.balance_amount > 0)
-        .map(i => {
-            const due = Date.parse(i.due_date?.slice(0, 10));
-            return { ...i, daysOverdue: Number.isFinite(due) ? Math.floor((today - due) / 86400000) : 0 };
-        });
+    return invoiceAgingRows(db.invoices, now);
 }
 
 /** Screen sources and all export formats share invoice, receipt and P&L identities. */

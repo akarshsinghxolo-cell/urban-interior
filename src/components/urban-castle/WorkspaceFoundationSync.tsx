@@ -140,14 +140,11 @@ export function WorkspaceFoundationSync(): null {
             },
           });
           if (response.status === 401) await redirectToSignin();
-          if (response.status === 403) {
-            await reloadFoundation(controller.signal);
-            return;
-          }
+          if (response.status === 403) { window.location.reload(); return; }
           if (!response.ok) return;
 
           const delta = await response.json() as WorkspaceDeltaPayload;
-          if (delta.requiresFullReload && delta.reason === "client_ahead") {
+          if (delta.requiresFullReload && (delta.reason === "client_ahead" || delta.reason === "permissions_changed")) {
             window.location.reload();
             return;
           }

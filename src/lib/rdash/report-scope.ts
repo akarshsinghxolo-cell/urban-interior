@@ -12,14 +12,23 @@ export function applyReportFilter(db: RDashDatabase, filter: ReportFilter): RDas
         const wo = db.workOrders.find((w) => w.id === filter.workOrderId);
         if (wo) customerId = wo.customer_id;
     }
-    // Resolve workOrderIds from customerId if only customerId is set, so
-    // work-order-scoped collections (POs/GRNs/bills) are also filtered.
-    const workOrderIds = new Set<string>();
-    if (customerId) {
-        db.workOrders.filter((w) => w.customer_id === customerId).forEach((w) => workOrderIds.add(w.id));
-    }
-    if (filter.workOrderId) workOrderIds.add(filter.workOrderId);
-    const selectedWork = filter.workOrderId ? db.workOrders.find(w => w.id === filter.workOrderId) : undefined;
+    const commercialScope = Boolean(customerId || filter.workOrderId);
+    const selectedOrders = db.workOrders.filter(work => (!customerId || work.customer_id === customerId) &&
+        (!filter.workOrderId || work.id === filter.workOrderId));
+    const workOrderIds = new Set(selectedOrders.map(work => work.id));
+    const siteIds = new Set(filter.workOrderId ? selectedOrders.map(work => work.site_id) :
+        db.sites.filter(site => site.customer_id === customerId).map(site => site.id));
+    const selectedWork = selectedOrders.find(work => work.id === filter.workOrderId);
+    const inCommercialScope = (row: { work_order_id?: string; site_id?: string }) => !commercialScope ||
+        (row.work_order_id ? workOrderIds.has(row.work_order_id) : !filter.workOrderId && !!row.site_id && siteIds.has(row.site_id));
+    const supplierScope = commercialScope || Boolean(filter.vendorId);
+    const purchaseOrders = db.purchaseOrders.filter(row => inCommercialScope(row) && (!filter.vendorId || row.vendor_id === filter.vendorId));
+    const poIds = new Set(purchaseOrders.map(row => row.id));
+    const vendorBills = db.vendorBills.filter(row => (!filter.vendorId || row.vendor_id === filter.vendorId) &&
+        (!commercialScope || (row.work_order_id || row.site_id ? inCommercialScope(row) : poIds.has(row.po_id))));
+    const vendorBillIds = new Set(vendorBills.map(row => row.id));
+    const contractorBills = db.contractorBills.filter(inCommercialScope);
+    const contractorBillIds = new Set(contractorBills.map(row => row.id));
     return {
         ...db,
         workRequired: customerId || filter.workOrderId
@@ -27,7 +36,7 @@ export function applyReportFilter(db: RDashDatabase, filter: ReportFilter): RDas
                 (!filter.workOrderId || (selectedWork?.work_required_ids || []).includes(w.id)))
             : db.workRequired,
         customers: filter.customerId ? db.customers.filter((c) => c.id === filter.customerId) : db.customers,
-        sites: customerId ? db.sites.filter((s) => s.customer_id === customerId) : db.sites,
+        sites: commercialScope ? db.sites.filter(site => siteIds.has(site.id)) : db.sites,
         workOrders: customerId || filter.workOrderId
             ? db.workOrders.filter((w) => (!customerId || w.customer_id === customerId) && (!filter.workOrderId || w.id === filter.workOrderId))
             : db.workOrders,
@@ -52,21 +61,20 @@ export function applyReportFilter(db: RDashDatabase, filter: ReportFilter): RDas
         followups: customerId || filter.staffId
             ? db.followups.filter((f) => (!customerId || f.customer_id === customerId) && (!filter.staffId || f.assigned_staff_id === filter.staffId))
             : db.followups,
-        purchaseOrders: filter.workOrderId || filter.vendorId
-            ? db.purchaseOrders.filter((p) => (!filter.workOrderId || p.work_order_id === filter.workOrderId) && (!filter.vendorId || p.vendor_id === filter.vendorId))
-            : db.purchaseOrders,
-        grns: filter.workOrderId || filter.vendorId
-            ? db.grns.filter((g) => (!filter.workOrderId || g.work_order_id === filter.workOrderId) && (!filter.vendorId || g.vendor_id === filter.vendorId))
-            : db.grns,
-        vendorBills: filter.workOrderId || filter.vendorId
-            ? db.vendorBills.filter((b) => (!filter.workOrderId || b.work_order_id === filter.workOrderId) && (!filter.vendorId || b.vendor_id === filter.vendorId))
-            : db.vendorBills,
-        vendorPayments: filter.workOrderId || filter.vendorId
-            ? db.vendorPayments.filter((p) => (!filter.workOrderId || p.work_order_id === filter.workOrderId) && (!filter.vendorId || p.vendor_id === filter.vendorId))
-            : db.vendorPayments,
-        vendorRfqs: filter.workOrderId
-            ? db.vendorRfqs.filter((r) => r.work_order_id === filter.workOrderId)
-            : db.vendorRfqs,
+        acceptedScopes: commercialScope ? db.acceptedScopes.filter(row =>
+            (!customerId || row.customer_id === customerId) &&
+            (!filter.workOrderId || selectedWork?.accepted_scope_ids?.includes(row.id))) : db.acceptedScopes,
+        workOrderCostLines: commercialScope ? db.workOrderCostLines.filter(row => workOrderIds.has(row.work_order_id)) : db.workOrderCostLines,
+        purchaseOrders: supplierScope ? purchaseOrders : db.purchaseOrders,
+        grns: supplierScope ? db.grns.filter(row => (!filter.vendorId || row.vendor_id === filter.vendorId) &&
+            (!commercialScope || (row.work_order_id ? workOrderIds.has(row.work_order_id) : poIds.has(row.po_id)))) : db.grns,
+        vendorBills: supplierScope ? vendorBills : db.vendorBills,
+        vendorPayments: supplierScope ? db.vendorPayments.filter(row => (!filter.vendorId || row.vendor_id === filter.vendorId) &&
+            (!commercialScope || (row.work_order_id || row.site_id ? inCommercialScope(row) : vendorBillIds.has(row.vendor_bill_id)))) : db.vendorPayments,
+        contractorBills: commercialScope ? contractorBills : db.contractorBills,
+        contractorPayments: commercialScope ? db.contractorPayments.filter(row =>
+            inCommercialScope(row) || contractorBillIds.has(row.contractor_bill_id || "")) : db.contractorPayments,
+        vendorRfqs: commercialScope ? db.vendorRfqs.filter(row => workOrderIds.has(row.work_order_id)) : db.vendorRfqs,
         master: filter.vendorId
             ? { ...db.master, vendors: db.master.vendors.filter((v) => v.id === filter.vendorId) }
             : filter.staffId

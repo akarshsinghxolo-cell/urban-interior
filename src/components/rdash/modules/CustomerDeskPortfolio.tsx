@@ -1,4 +1,5 @@
 "use client";
+import { customerFinancialSummary } from "@/lib/rdash/financial-projections";
 
 import * as React from "react";
 import {
@@ -173,12 +174,9 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
   const historyEntries = customerHistoryEntries(db, customerId);
 
   const totalAccepted = acceptedScopes.reduce((sum, row) => sum + (row.accepted_value || 0), 0);
-  const unlinkedReceipts = receipts.filter((row) => !row.payment_id).reduce((sum, row) => sum + row.amount, 0);
-  const paymentMirror = payments.reduce((sum, row) => sum + (row.received_amount || (row.status === "received" ? row.amount : 0)), 0);
-  const totalReceived = unlinkedReceipts + paymentMirror;
-  const totalInvoiced = invoices.reduce((sum, row) => sum + (row.total_amount || 0), 0);
-  const totalReceivable = invoices.reduce((sum, row) => sum + (row.balance_amount || 0), 0);
-  const vendorLiability = vendorBills.reduce((sum, row) => sum + (row.total_amount || 0), 0);
+  const { collected: totalReceived, invoiced: totalInvoiced, receivable: totalReceivable } = customerFinancialSummary(invoices, receipts);
+  const vendorLiability = vendorBills.filter(row => ["approved", "partly_paid"].includes(row.status))
+    .reduce((sum, row) => sum + (row.balance_amount || 0), 0);
   const contractorIncurred = contractorCosts.reduce((sum, row) => sum + (row.amount || 0), 0);
 
   const tabs: Array<{ key: ContextCustomerTab; label: string; icon: React.ReactNode }> = [

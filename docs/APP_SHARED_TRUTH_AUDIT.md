@@ -31,6 +31,14 @@ closed for unknown jobs. No historical row or schema is rewritten.
 The source evidence below describes the original baseline, not current behavior.
 R01–R06 remain review items rather than confirmed defects resolved by this change.
 
+Follow-through after PR243: legacy partner summaries now use canonical
+projections (R01). The financial follow-through centralizes invoice status and
+Indian date rules, customer/job supplier scoping and complete analytical reads
+(R02–R05); see [FINANCIAL_TRUTH_FOLLOW_THROUGH.md](FINANCIAL_TRUTH_FOLLOW_THROUGH.md).
+R06 now has authenticated multi-context browser regressions and permission-change
+revalidation, while a manual two-user production exercise remains unperformed.
+The original evidence and review questions below are retained for traceability.
+
 ## Confirmed source inconsistencies
 
 | ID | Priority | Evidence | Consequence | Correction target |

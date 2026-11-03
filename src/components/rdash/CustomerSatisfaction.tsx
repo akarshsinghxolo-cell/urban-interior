@@ -1,4 +1,5 @@
 "use client";
+import { isRecognizedInvoice } from "@/lib/rdash/financial-projections";
 import * as React from "react";
 import { Heart, Smile, Meh, Frown, TrendingUp, ArrowRight, Star, ThumbsUp, CheckCircle2, Clock } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
@@ -36,7 +37,7 @@ export function CustomerSatisfaction() {
     const quotePct = quotationMetrics.conversionRate;
 
     // 2. Payment receipt rate
-    const totalInvoiced = db.invoices.reduce((s, inv) => s + inv.total_amount, 0);
+    const totalInvoiced = db.invoices.filter(isRecognizedInvoice).reduce((s, inv) => s + inv.total_amount, 0);
     const totalReceived = db.customerReceipts.reduce((s, r) => s + r.amount, 0);
     const paymentPct = totalInvoiced > 0 ? Math.min(100, (totalReceived / totalInvoiced) * 100) : 0;
 

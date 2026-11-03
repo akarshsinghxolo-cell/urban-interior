@@ -1,7 +1,9 @@
 "use client";
 
+import { invoiceFinancialSummary } from "@/lib/rdash/financial-projections";
+import { useBusinessDate } from "@/lib/rdash/use-business-date";
 import { applyReportFilter } from "@/lib/rdash/report-scope";
-import { agingInvoiceRows, sharedReportExport } from "@/lib/rdash/report-data";
+import { agingInvoiceRows, sharedReportExport, monthlyReceiptTotals } from "@/lib/rdash/report-data";
 import { vendorExposureRows, taxReportProjection } from "@/lib/rdash/store/selectors";
 import * as React from "react";
 import { cn } from "@/lib/utils";
@@ -30,48 +32,13 @@ function BarRow({ label, value, max, color = "bg-primary", valueLabel }: {
       <span className="w-24 shrink-0 text-right text-xs font-semibold">{valueLabel || formatINRShort(value)}</span>
     </div>);
 }
-function lastNMonths(n: number): {
-    key: string;
-    label: string;
-    year: number;
-    monthIdx: number;
-}[] {
-    const out: {
-        key: string;
-        label: string;
-        year: number;
-        monthIdx: number;
-    }[] = [];
-    const now = new Date();
-    for (let i = n - 1; i >= 0; i--) {
-        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        out.push({
-            key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
-            label: d.toLocaleString("en-IN", { month: "short" }),
-            year: d.getFullYear(),
-            monthIdx: d.getMonth(),
-        });
-    }
-    return out;
-}
 function paymentOutstanding(payment: {
     amount: number;
     received_amount?: number;
 }) {
     return Math.max(0, payment.amount - (payment.received_amount || 0));
 }
-function monthlyReceived(db: RDashDatabase, n: number) {
-    const months = lastNMonths(n);
-    return months.map((month) => {
-        const value = db.customerReceipts
-            .filter((receipt) => {
-            const date = new Date(receipt.received_at);
-            return date.getFullYear() === month.year && date.getMonth() === month.monthIdx;
-        })
-            .reduce((sum, receipt) => sum + receipt.amount, 0);
-        return { ...month, value };
-    });
-}
+const monthlyReceived = monthlyReceiptTotals;
 function DonutStat({ label, value, total, color }: {
     label: string;
     value: number;
@@ -122,8 +89,7 @@ function ReportCard({ title, subtitle, icon, children, action }: {
  *
  * Filter dimensions:
  *  - customerId: filter quotations, payments, invoices, customerReceipts,
- *    visits, tasks, followups, workOrders to that customer. Vendor data is
- *    left untouched (a customer filter doesn't change vendor exposure).
+ *    visits, tasks, followups, workOrders and linked supplier costs to that customer.
  *  - workOrderId: filter the same set + POs/GRNs/bills to that work order.
  *  - vendorId: filter POs, GRNs, vendorBills, vendorPayments, vendorRates to
  *    that vendor.
@@ -748,7 +714,7 @@ function CollectionReport({ db: dbRaw, filter }: {
         <MetricCard label="Total collected" value={formatINRShort(totalCollected)} tone="success" icon={<DollarSign className="h-4 w-4"/>}/>
         <MetricCard label="Overdue count" value={db.payments.filter((p) => p.status === "overdue").length} tone="destructive" icon={<AlertTriangle className="h-4 w-4"/>}/>
         <MetricCard label="Overdue value" value={formatINRShort(db.payments.filter((p) => p.status === "overdue").reduce((n, p) => n + paymentOutstanding(p), 0))} tone="destructive" icon={<TrendingDown className="h-4 w-4"/>}/>
-        <MetricCard label="Collection rate" value={`${totalCollected > 0 ? Math.round((totalCollected / (totalCollected + db.invoices.reduce((sum, invoice) => sum + invoice.balance_amount, 0))) * 100) : 0}%`} tone="primary" icon={<Target className="h-4 w-4"/>}/>
+        <MetricCard label="Collection rate" value={`${totalCollected > 0 ? Math.round((totalCollected / (totalCollected + invoiceFinancialSummary(db.invoices).receivable)) * 100) : 0}%`} tone="primary" icon={<Target className="h-4 w-4"/>}/>
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
         <ReportCard title="Collection by mode" icon={<DollarSign className="h-4 w-4"/>}>
@@ -1028,7 +994,8 @@ function AgingReport({ db: dbRaw, filter }: {
         { label: "8–30 days overdue", min: 7, max: 30, color: "bg-warning" },
         { label: "31+ days overdue", min: 30, max: Infinity, color: "bg-destructive" },
     ];
-    const unpaid = agingInvoiceRows(db);
+    const businessDay = useBusinessDate();
+    const unpaid = agingInvoiceRows(db, new Date(`${businessDay}T12:00:00+05:30`));
     const bucketed = buckets.map((b) => {
         const items = unpaid.filter((invoice) => {
             const days = invoice.daysOverdue;

@@ -1,3 +1,4 @@
+import { isRecognizedInvoice, isOpenInvoice, invoiceDaysOverdue } from "./financial-projections";
 import { indianWhatsAppDialDigits, isValidIndianMobile } from "./phone-validation";
 import type { WorkRequired, WorkRequiredStatus, RDashDatabase, WorkOrder } from "./types";
 import { indiaDate } from "./date";
@@ -69,13 +70,13 @@ function progressForWorkRequired(workRequired: WorkRequired | undefined): Custom
  * invoice arrays and therefore no financial signal or leakage.
  */
 function customerCollectionPenalty(db: RDashDatabase, customerId: string): number {
-    const invoices = db.invoices.filter((invoice) => invoice.customer_id === customerId);
+    const invoices = db.invoices.filter((invoice) => invoice.customer_id === customerId && isRecognizedInvoice(invoice));
     if (!invoices.length) return 0;
     const today = indiaDate();
     const issuedValue = invoices.reduce((sum, invoice) => sum + invoice.total_amount, 0);
     if (issuedValue <= 0) return 0;
     const overdueValue = invoices
-        .filter((invoice) => invoice.balance_amount > 0 && invoice.due_date < today && invoice.status !== "cancelled")
+        .filter((invoice) => isOpenInvoice(invoice) && invoiceDaysOverdue(invoice.due_date, today) > 0)
         .reduce((sum, invoice) => sum + invoice.balance_amount, 0);
     if (overdueValue <= 0) return 0;
     return Math.round(Math.min(1, overdueValue / issuedValue) * 25 * 10) / 10;
