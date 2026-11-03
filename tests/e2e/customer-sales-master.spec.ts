@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { COLLECTION_TO_TABLE, isSharedCollection } from "../../src/lib/rdash/shared-domain-storage";
+import type { Quotation } from "../../src/lib/rdash/types";
 
 test("customer pipeline derives progress and material options use the real scoped catalogue", async ({ page, request }, testInfo) => {
   const suffix = Date.now().toString(36);
@@ -18,7 +19,7 @@ test("customer pipeline derives progress and material options use the real scope
   await insert("master.articles", { id: `${id}-article`, name: "QA actual catalogue panel", unit_id: "sqft" });
   await insert("master.subcategoryArticleMap", { id: `${id}-map`, work_required_id: `${id}-sub`, article_id: `${id}-article` });
   await insert("workRequired", { id: `${id}-work`, customer_id: id, site_id: `${id}-site`, title: "QA wall finish · Standard", status: "new", work_subcategory_ids: [`${id}-sub`], work_type_ids: [`${id}-wt`], area_ids: [], priority: "medium", created_at: now, updated_at: now });
-  await insert("quotations", { id: `${id}-quote`, customer_id: id, site_id: `${id}-site`, quotation_no: "QA-AUTO-QUOTE", title: "QA quotation", status: "sent", coverage: [{ id: `${id}-coverage`, work_required_id: `${id}-work`, area_ids: [], measurement_revision_ids: [], coverage_label: "QA scope", status: "proposed" }], items: [], subtotal: 0, total: 0, created_at: now, updated_at: now });
+  await insert("quotations", { id: `${id}-quote`, customer_id: id, site_id: `${id}-site`, quotation_no: "QA-AUTO-QUOTE", title: "QA quotation", status: "sent", revision_no: 0, valid_until: now.slice(0, 10), coverage: [{ id: `${id}-coverage`, work_required_id: `${id}-work`, area_ids: [], measurement_revision_ids: [], coverage_label: "QA scope", status: "proposed" }], scope_lines: [], items: [], work_order_ids: [], payment_terms: [], subtotal: 0, tax_amount: 0, total_amount: 0, created_at: now, updated_at: now } satisfies Quotation);
 
   await page.goto("/workspace/customers");
   const desk = page.getByRole("tabpanel", { name: "Customer Desk", exact: true });
