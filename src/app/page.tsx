@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
+  verification: { google: "s8YO92u-QNTC2iX7GhpHbqG0uQel9rQLp30zgDgnVc4" },
   title: "Urban Castle | Business Workspace",
   description:
     "Urban Castle is a business workspace for customer management, quotations, site execution, procurement, finance, and project files.",

@@ -26,7 +26,7 @@ export function LegalPage({ title, summary, children }: { title: string; summary
           <Link href="/">Home</Link>
           <Link href="/privacy">Privacy</Link>
           <Link href="/tos">Terms</Link>
-          <a href="mailto:akarshsingh4@gmail.com">Contact</a>
+          <a href="mailto:colorburstberger@gmail.com">Contact</a>
         </footer>
       </div>
     </main>

@@ -55,7 +55,7 @@ export default function TermsOfServicePage() {
       <section>
         <h2>9. Changes and contact</h2>
         <p>These terms may be updated from time to time. Continued use after an updated version becomes effective means you accept the updated terms.</p>
-        <p>Questions about these terms may be sent to <a href="mailto:akarshsingh4@gmail.com">akarshsingh4@gmail.com</a>.</p>
+        <p>Questions about these terms may be sent to <a href="mailto:colorburstberger@gmail.com">colorburstberger@gmail.com</a>.</p>
       </section>
     </LegalPage>
   );

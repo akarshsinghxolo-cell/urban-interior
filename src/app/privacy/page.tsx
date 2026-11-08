@@ -36,7 +36,8 @@ export default function PrivacyPolicyPage() {
 
       <section>
         <h2>4. Sharing and service providers</h2>
-        <p>Information may be processed by hosting, database, security, and storage providers only as needed to operate Urban Castle. Google processes Drive data under the user&apos;s Google agreement. Information may also be disclosed when required by law, to protect users or the service, or as part of a business transfer with appropriate notice and safeguards.</p>
+        <p>Information may be processed by hosting, database, security, and storage providers only as needed to operate Urban Castle. Google processes Drive data under the user&apos;s Google agreement. Information may also be disclosed when required by law or to protect users or the service. A transfer of Google user data as part of a business transfer requires the user&apos;s explicit prior consent.</p>
+        <p>Authorized workspace members can access project files according to their permissions. Uploaded Drive files currently receive “Anyone with the link” reader access: a person who obtains a file&apos;s Google link can view it without signing in to Urban Castle. Do not upload confidential information unless this sharing setting is appropriate. The Drive account owner can review and change sharing permissions in Google Drive.</p>
       </section>
 
       <section>
@@ -47,13 +48,13 @@ export default function PrivacyPolicyPage() {
 
       <section>
         <h2>6. Your choices</h2>
-        <p>Users may stop using the service, ask the workspace owner to correct or delete workspace records, disconnect a Drive account in Urban Castle, or revoke Urban Castle&apos;s access from their <a href="https://myaccount.google.com/permissions">Google Account permissions</a>. Revoking access stops future Google Drive access but does not automatically delete records or files already created.</p>
+        <p>Users may stop using the service, ask the workspace owner to correct, export, or delete workspace records, disable a Drive account as an upload destination in Urban Castle, or revoke Urban Castle&apos;s access from their <a href="https://myaccount.google.com/permissions">Google Account permissions</a>. Disabling uploads does not revoke Google authorization. Revoking access stops future authorized Google Drive access but does not automatically delete records, files, or public sharing links already created. To restrict an existing file link, change that file&apos;s sharing permissions in Google Drive.</p>
       </section>
 
       <section>
         <h2>7. Changes and contact</h2>
         <p>This policy may be updated when the service or legal requirements change. Material changes will be posted here with a new effective date.</p>
-        <p>For privacy questions or data requests, contact Urban Castle at <a href="mailto:akarshsingh4@gmail.com">akarshsingh4@gmail.com</a>.</p>
+        <p>For privacy questions or data requests, contact Urban Castle at <a href="mailto:colorburstberger@gmail.com">colorburstberger@gmail.com</a>. Include the account and records concerned so we can verify the request and coordinate with the workspace owner.</p>
       </section>
     </LegalPage>
   );
