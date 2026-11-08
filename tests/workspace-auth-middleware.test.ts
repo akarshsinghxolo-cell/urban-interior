@@ -64,10 +64,15 @@ describe("workspace auth middleware", () => {
     expect(cookie).toContain("Max-Age=0");
   });
 
-  test("keeps signed-out root behavior at sign-in without storing a return path", () => {
+  test("keeps the OAuth home and legal pages public without storing a return path", () => {
     const response = middleware(new NextRequest(`${origin}/`));
-    expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toBe(`${origin}/signin`);
+    expect(response.status).toBe(200);
     expect(response.headers.get("set-cookie")).toBeNull();
+
+    for (const path of ["/privacy", "/tos"]) {
+      const legalResponse = middleware(new NextRequest(`${origin}${path}`));
+      expect(legalResponse.status).toBe(200);
+      expect(legalResponse.headers.get("location")).toBeNull();
+    }
   });
 });

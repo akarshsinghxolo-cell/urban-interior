@@ -10,6 +10,8 @@ import {
 
 const PUBLIC = new Set([
   "/signin",
+  "/privacy",
+  "/tos",
   "/api/auth/login",
   "/api/auth/signup",
   "/api/auth/logout",
@@ -97,6 +99,12 @@ export function middleware(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
   const hasBearer = Boolean(authHeader && authHeader.toLowerCase().startsWith("bearer "));
   const hasSession = Boolean(request.cookies.get("uc_session")?.value || hasBearer);
+
+  // The root page is Urban Castle's public OAuth home page. Signed-in users
+  // still enter the workspace directly below.
+  if (path === "/" && !hasSession) {
+    return applyCors(NextResponse.next(), cors);
+  }
 
   if (!hasSession) {
     if (path.startsWith("/api/")) {
