@@ -378,14 +378,9 @@ export async function captureWorkspaceCommit(body: BodyInit | null | undefined):
     updatedAt: timestamp,
   };
 
-  if (!syncingItems.length) {
-    for (const item of existingItems) await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId);
-  } else {
-    for (const item of existingItems) {
-      if (item.status !== "syncing") await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId);
-    }
-  }
-  await uploadIndexedDb.putWorkspaceOutbox(record);
+  // A quota/storage error must preserve the previous recovery copy.
+  await uploadIndexedDb.replaceWorkspaceOutbox(record,
+    existingItems.filter((item) => item.status !== "syncing").map((item) => item.operationId));
   await refresh();
   return {
     body: JSON.stringify({ ...parsed, operationId }),

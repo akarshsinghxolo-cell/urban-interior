@@ -101,12 +101,31 @@ export const uploadQueueStore = {
         // bytes would create uploads the user never committed. Discard them.
         const staleDraftItems = items.filter((item) => item.deferred);
         const staleDraftIds = new Set(staleDraftItems.map((item) => item.id));
-        const restoredItems = items.filter((item) => !staleDraftIds.has(item.id));
+        let restoredItems = items.filter((item) => !staleDraftIds.has(item.id));
         if (staleDraftItems.length) {
           await Promise.all(staleDraftItems.flatMap((item) => [
             uploadIndexedDb.deleteBlob(item.id),
             uploadIndexedDb.deleteItem(item.id),
           ]));
+        }
+        // File bytes live only in this browser. Older releases could leave a
+        // retrying record behind after those bytes disappeared; stop it once
+        // instead of retrying forever on every workspace refresh.
+        const transferableItems = restoredItems.filter((item) => !item.deferred
+          && !item.googleFileId
+          && !["completed", "cancelled", "cancel_requested", "failed_permanent", "cleanup_pending"].includes(item.status));
+        const missingBlobIds = await uploadIndexedDb.findMissingBlobIds(transferableItems.map((item) => item.id));
+        if (missingBlobIds.size) {
+          const updatedAt = new Date().toISOString();
+          restoredItems = restoredItems.map((item) => missingBlobIds.has(item.id) ? {
+            ...item,
+            status: "failed_permanent" as const,
+            retryAt: undefined,
+            lastErrorCode: "FILE_MISSING",
+            lastErrorMessage: "The original file is no longer available on this device. Select it again or remove this upload.",
+            updatedAt,
+          } : item);
+          await uploadIndexedDb.putItems(restoredItems.filter((item) => missingBlobIds.has(item.id)));
         }
         const restoredBatchIds = new Set(restoredItems.map((item) => item.batchId));
         const staleDraftBatches = batches.filter((batch) =>
@@ -168,14 +187,12 @@ export const uploadQueueStore = {
       createdAt,
       updatedAt: createdAt,
     };
-    await persistBatch(batch);
-
-    let queuedCount = 0;
-    try {
+    const items: UploadItemRecord[] = [];
+    const blobs: import("./upload-types").UploadBlobRecord[] = [];
       for (const [fileIndex, file] of input.files.entries()) {
         const itemOptions = input.fileOptions?.[fileIndex];
         const fingerprint = await fingerprintUploadBlob(file, file.name);
-        const duplicate = snapshot.items.find((entry) =>
+        const duplicate = [...snapshot.items, ...items].find((entry) =>
           entry.fingerprint === fingerprint &&
           entry.fileName === file.name &&
           entry.sizeBytes === file.size &&
@@ -222,28 +239,15 @@ export const uploadQueueStore = {
           updatedAt: createdAt,
         };
 
-        await uploadIndexedDb.putBlob({ uploadItemId: itemId, blob: file, createdAt });
-        try {
-          await persistItem(item);
-          queuedCount += 1;
-        } catch (error) {
-          await uploadIndexedDb.deleteBlob(itemId).catch(() => undefined);
-          throw error;
-        }
+        items.push(item);
+        blobs.push({ uploadItemId: itemId, blob: file, createdAt });
       }
-    } catch (error) {
-      if (queuedCount === 0) {
-        await uploadIndexedDb.deleteBatch(batchId).catch(() => undefined);
-        emit({ ...snapshot, batches: snapshot.batches.filter((entry) => entry.id !== batchId) });
-      }
-      throw error;
-    }
-
-    if (queuedCount === 0) {
-      await uploadIndexedDb.deleteBatch(batchId);
-      emit({ ...snapshot, batches: snapshot.batches.filter((entry) => entry.id !== batchId) });
+    if (!items.length) {
       throw new Error("Every selected file is already pending for this record on this device.");
     }
+    // No transfer starts until every file in this batch is durably stored.
+    await uploadIndexedDb.putUploadBatch(batch, items, blobs);
+    emit({ ...snapshot, batches: [...snapshot.batches, batch], items: [...snapshot.items, ...items] });
     return batchId;
   },
   async patchItem(uploadItemId: UploadItemId, patch: Partial<UploadItemRecord>): Promise<UploadItemRecord> {
@@ -336,18 +340,31 @@ export const uploadQueueStore = {
   },
   async retryItem(uploadItemId: UploadItemId): Promise<void> {
     const item = this.getItem(uploadItemId);
-    if (!item || item.deferred) return;
+    if (!item || item.deferred || !["paused", "failed_permanent"].includes(item.status)) return;
+    if (item.lastErrorCode === "FILE_MISSING") throw new Error("Select the original file again before retrying.");
     const online = typeof navigator === "undefined" ? true : navigator.onLine;
     await this.patchItem(uploadItemId, {
       status: online ? "queued" : "paused",
+      retryCount: 0,
       retryAt: undefined,
       lastErrorCode: online ? undefined : NETWORK_ERROR_CODE,
       lastErrorMessage: online ? undefined : "Upload paused until the network is available.",
     });
   },
   async retryAll(): Promise<void> {
-    const retryable = snapshot.items.filter((item) => !item.deferred && (item.status === "paused" || item.status === "failed_permanent"));
+    const retryable = snapshot.items.filter((item) => !item.deferred && item.lastErrorCode !== "FILE_MISSING" && (item.status === "paused" || item.status === "failed_permanent"));
     for (const item of retryable) await this.retryItem(item.id);
+  },
+  async reselectFile(uploadItemId: UploadItemId, file: File): Promise<void> {
+    const item = this.getItem(uploadItemId);
+    if (!item || item.lastErrorCode !== "FILE_MISSING") throw new Error("This upload is not waiting for a replacement file.");
+    const fingerprint = await fingerprintUploadBlob(file, item.fileName);
+    if (file.size !== item.sizeBytes || fingerprint !== item.fingerprint) {
+      throw new Error(`Choose the original ${item.fileName}. This file does not match the pending upload.`);
+    }
+    await uploadIndexedDb.putBlob({ uploadItemId, blob: file, createdAt: new Date().toISOString() });
+    await this.patchItem(uploadItemId, { lastErrorCode: undefined });
+    await this.retryItem(uploadItemId);
   },
   async cancelItem(uploadItemId: UploadItemId): Promise<void> {
     const item = this.getItem(uploadItemId);

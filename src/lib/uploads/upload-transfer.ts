@@ -11,6 +11,7 @@ const LEASE_KEY = "uc-upload-manager-lease";
 const LEASE_MS = 20_000;
 const LEASE_RENEW_MS = 5_000;
 const MAX_SESSION_RESTARTS = 2;
+const MAX_AUTO_RETRIES = 5;
 const SESSION_EXPIRY_SAFETY_MS = 30_000;
 const TAB_ID = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 let running: Promise<void> | null = null;
@@ -219,7 +220,7 @@ async function querySession(item: UploadItemRecord) {
 
 async function uploadBytes(item: UploadItemRecord, sessionRestarts = 0): Promise<UploadItemRecord> {
   const blob = await uploadQueueStore.getBlob(item.id);
-  if (!blob) throw new Error("The selected file is no longer available on this device.");
+  if (!blob) throw new UploadApiError("The original file is no longer available on this device. Select it again to continue.", "FILE_MISSING");
   if (blob.size <= 0) throw new Error("Empty files cannot be uploaded.");
 
   assertNotCancelled(item.id);
@@ -269,12 +270,15 @@ async function uploadBytes(item: UploadItemRecord, sessionRestarts = 0): Promise
     });
 
     if (response.status === 308) {
-      offset = rangeEnd(response, end - 1) + 1;
+      const confirmed = rangeEnd(response, -1) + 1;
+      if (confirmed <= offset) throw new TemporaryDriveError("Drive has not confirmed the next chunk. The upload will retry.");
+      offset = confirmed;
       if (offset < 0 || offset > current.sizeBytes) throw new Error("Drive returned an invalid confirmed byte range.");
       current = await uploadQueueStore.patchItem(current.id, {
         status: "uploading",
         confirmedBytes: offset,
         progress: Math.round(offset / current.sizeBytes * 100),
+        retryCount: 0,
       });
       continue;
     }
@@ -365,14 +369,21 @@ async function cancel(item: UploadItemRecord) {
 async function processItem(initial: UploadItemRecord) {
   try {
     let item = latestItem(initial.id);
-    if (item.status === "cancel_requested") return cancel(item);
+    if (item.status === "cancel_requested") return await cancel(item);
     const uploaded = item.googleFileId ? item : await uploadBytes(item);
     item = latestItem(uploaded.id);
-    if (item.status === "cancel_requested") return cancel(item);
+    if (item.status === "cancel_requested") return await cancel(item);
     if (item.googleFileId) await finalize(item);
   } catch (error) {
     const latest = uploadQueueStore.getItem(initial.id);
     if (!latest) return;
+    if (latest.status === "cleanup_pending") {
+      await uploadQueueStore.patchItem(latest.id, {
+        status: "cleanup_pending", retryAt: undefined, lastErrorCode: "CLEANUP_ERROR",
+        lastErrorMessage: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
     if (error instanceof UploadCancelledError || latest.status === "cancel_requested") {
       await cancel(latest).catch(async (cleanupError) => {
         await uploadQueueStore.patchItem(latest.id, {
@@ -389,7 +400,7 @@ async function processItem(initial: UploadItemRecord) {
     const network = error instanceof TypeError || /network|fetch|offline|temporarily/i.test(message);
     const retryCount = latest.retryCount + 1;
 
-    if (targetNotReady) {
+    if (targetNotReady && retryCount < MAX_AUTO_RETRIES) {
       const delay = targetReadyRetryDelayMs(retryCount);
       await uploadQueueStore.patchItem(latest.id, {
         status: "paused",
@@ -402,6 +413,18 @@ async function processItem(initial: UploadItemRecord) {
     }
 
     const offline = typeof navigator !== "undefined" && !navigator.onLine;
+    const retryable = network || (error instanceof UploadApiError &&
+      (error.status === 408 || error.status === 429 || (error.status || 0) >= 500));
+    if ((!retryable && !offline) || retryCount >= MAX_AUTO_RETRIES) {
+      await uploadQueueStore.patchItem(latest.id, {
+        status: "failed_permanent", retryCount, retryAt: undefined,
+        lastErrorCode: error instanceof UploadApiError && error.code ? error.code : "NEEDS_ATTENTION",
+        lastErrorMessage: targetNotReady
+          ? "Save the related record first, then retry this upload. Your file is still saved on this device."
+          : message,
+      });
+      return;
+    }
     const hintedDelay = error instanceof TemporaryDriveError || error instanceof UploadApiError
       ? error.retryAfterMs
       : undefined;
@@ -423,6 +446,7 @@ function scheduleNextRetry() {
     retryTimer = null;
   }
   const next = uploadQueueStore.getSnapshot().items
+    .filter((item) => !item.deferred && item.status === "paused")
     .map((item) => item.retryAt ? Date.parse(item.retryAt) : NaN)
     .filter(Number.isFinite)
     .sort((a, b) => a - b)[0];

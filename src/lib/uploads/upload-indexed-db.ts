@@ -125,9 +125,47 @@ async function clear(storeName: StoreName): Promise<void> {
   await transactionDone(transaction);
 }
 
+async function findMissingBlobIds(uploadItemIds: UploadItemId[]): Promise<Set<UploadItemId>> {
+  if (!uploadItemIds.length) return new Set();
+  const db = await openDatabase();
+  const transaction = db.transaction(STORES.blobs, "readonly");
+  const store = transaction.objectStore(STORES.blobs);
+  const keys = await Promise.all(uploadItemIds.map((id) => requestResult(store.getKey(id))));
+  await transactionDone(transaction);
+  return new Set(uploadItemIds.filter((id, index) => keys[index] === undefined));
+}
+
+async function putItems(items: UploadItemRecord[]): Promise<void> {
+  if (!items.length) return;
+  const db = await openDatabase();
+  const transaction = db.transaction(STORES.items, "readwrite");
+  for (const item of items) transaction.objectStore(STORES.items).put(item);
+  await transactionDone(transaction);
+}
+
 export const uploadIndexedDb = {
+  async putUploadBatch(batch: UploadBatchRecord, items: UploadItemRecord[], blobs: UploadBlobRecord[]): Promise<void> {
+    const db = await openDatabase();
+    const transaction = db.transaction([STORES.batches, STORES.items, STORES.blobs], "readwrite");
+    const done = transactionDone(transaction);
+    transaction.objectStore(STORES.batches).put(batch);
+    for (const item of items) transaction.objectStore(STORES.items).put(item);
+    for (const blob of blobs) transaction.objectStore(STORES.blobs).put(blob);
+    await done;
+  },
+  async replaceWorkspaceOutbox(record: WorkspaceCommitOutboxRecord, replacedIds: string[]): Promise<void> {
+    const db = await openDatabase();
+    const transaction = db.transaction(STORES.outbox, "readwrite");
+    const done = transactionDone(transaction);
+    const store = transaction.objectStore(STORES.outbox);
+    for (const id of replacedIds) store.delete(id);
+    store.put(record);
+    await done;
+  },
   readBatches: () => readAll<UploadBatchRecord>(STORES.batches),
   readItems: () => readAll<UploadItemRecord>(STORES.items),
+  findMissingBlobIds,
+  putItems,
   readWorkspaceOutbox: () => readAll<WorkspaceCommitOutboxRecord>(STORES.outbox),
   getBatch: (id: UploadBatchId) => get<UploadBatchRecord>(STORES.batches, id),
   getItem: (id: UploadItemId) => get<UploadItemRecord>(STORES.items, id),

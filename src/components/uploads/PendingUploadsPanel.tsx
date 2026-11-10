@@ -94,7 +94,9 @@ export function PendingUploadsPanel() {
 function PendingUploadRow({ item, sourceLabel, targetLabel, online }: { item: UploadItemRecord; sourceLabel: string; targetLabel: string; online: boolean }) {
   const percentage = Math.min(100, Math.max(item.progress || 0, item.sizeBytes > 0 ? Math.round((item.confirmedBytes / item.sizeBytes) * 100) : 0));
   const retryable = item.status === "paused" || item.status === "failed_permanent";
+  const fileMissing = item.lastErrorCode === "FILE_MISSING";
   const cleanupPending = item.status === "cleanup_pending";
+  const replacementInputRef = React.useRef<HTMLInputElement>(null);
 
   const retry = async () => {
     try {
@@ -108,6 +110,18 @@ function PendingUploadRow({ item, sourceLabel, targetLabel, online }: { item: Up
       await uploadQueueStore.cancelItem(item.id);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Drive cleanup could not be retried.");
+    }
+  };
+  const reselect = async (files: FileList | null) => {
+    const file = files?.[0];
+    if (!file) return;
+    try {
+      await uploadQueueStore.reselectFile(item.id, file);
+      toast.success(`${item.fileName} is ready to upload.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "The selected file could not be used.");
+    } finally {
+      if (replacementInputRef.current) replacementInputRef.current.value = "";
     }
   };
   const cancelBatch = async () => {
@@ -138,7 +152,8 @@ function PendingUploadRow({ item, sourceLabel, targetLabel, online }: { item: Up
           </div>
           {item.lastErrorMessage ? <p className="mt-2 rounded-md bg-destructive/10 px-2 py-1.5 text-[11px] text-destructive">{item.lastErrorMessage}</p> : null}
           <div className="mt-3 flex flex-wrap gap-2">
-            {retryable ? <Button size="sm" variant="outline" onClick={() => void retry()}><RefreshCw className="mr-1 h-3.5 w-3.5" />Retry now</Button> : null}
+            {fileMissing ? <><input ref={replacementInputRef} type="file" className="hidden" onChange={(event) => void reselect(event.target.files)} />
+              <Button size="sm" variant="outline" onClick={() => replacementInputRef.current?.click()}><UploadCloud className="mr-1 h-3.5 w-3.5" />Select original file</Button></> : retryable ? <Button size="sm" variant="outline" onClick={() => void retry()}><RefreshCw className="mr-1 h-3.5 w-3.5" />Retry now</Button> : null}
             {cleanupPending ? <Button size="sm" variant="outline" onClick={() => void retryCleanup()}><RefreshCw className="mr-1 h-3.5 w-3.5" />Retry cleanup</Button> : null}
             {item.status !== "cancel_requested" && !cleanupPending ? <Button size="sm" variant="ghost" onClick={() => void cancelBatch()}><Trash2 className="mr-1 h-3.5 w-3.5" />Cancel batch</Button> : null}
           </div>
@@ -156,6 +171,8 @@ function StatusBadge({ item, online }: { item: UploadItemRecord; online: boolean
   const Icon = failed || temporaryPaused ? AlertCircle : waiting ? CloudOff : UploadCloud;
   const label = item.status === "failed_permanent" && item.lastErrorCode === "TARGET_NOT_READY"
     ? "Target record required"
+    : item.lastErrorCode === "FILE_MISSING"
+      ? "Original file required"
     : networkPaused
       ? "Paused · network"
       : temporaryPaused

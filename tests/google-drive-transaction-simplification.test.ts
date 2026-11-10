@@ -17,8 +17,8 @@ describe("Google Drive transaction simplification", () => {
     const indexedDb = await readFile("src/lib/uploads/upload-indexed-db.ts", "utf8");
 
     expectTokens(indexedDb, ['const DB_NAME = "urban-castle-uploads"']);
-    expectTokens(store, ["await uploadIndexedDb.putBlob({ uploadItemId: itemId, blob: file, createdAt })"]);
-    expectTokens(store, ["await persistItem(item)"]);
+    expectTokens(store, ["await uploadIndexedDb.putUploadBatch(batch, items, blobs)"]);
+    expectTokens(indexedDb, ["findMissingBlobIds", "putItems"]);
     expect(transfer).toContain("sessionKnownExpired(current)");
     expect(transfer).toContain("resetDriveSession");
     expectTokens(transfer, ["response.status >= 400 && response.status < 500 && response.status !== 429"]);
@@ -31,6 +31,7 @@ describe("Google Drive transaction simplification", () => {
     expectTokens(transfer, ["0.75 + Math.random() * 0.5"]);
     expect(transfer).toContain("responseRetryAfterMs(response)");
     expectTokens(transfer, ["const hintedDelay"]);
+    expectTokens(transfer, ["const MAX_AUTO_RETRIES = 5", '"FILE_MISSING"']);
   });
 
   test("waits for every persisted attachment target and retries automatically", async () => {
@@ -181,6 +182,13 @@ describe("Google Drive transaction simplification", () => {
       "Open Drive",
       "% used",
     ]);
+  });
+
+  test("stops stale local upload records instead of retrying missing files forever", async () => {
+    const store = await readFile("src/lib/uploads/upload-store.ts", "utf8");
+    const panel = await readFile("src/components/uploads/PendingUploadsPanel.tsx", "utf8");
+    expectTokens(store, ["findMissingBlobIds", 'lastErrorCode: "FILE_MISSING"', 'status: "failed_permanent"']);
+    expectTokens(panel, ["Select original file", "reselectFile(item.id, file)"]);
   });
 
   test("removes the local-file provider from the active routes, validation, and shared contract", async () => {
