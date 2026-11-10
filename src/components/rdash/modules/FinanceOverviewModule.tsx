@@ -7,49 +7,16 @@ import { Button } from "@/components/ui/button";
 import { MetricCard, StatusBadge } from "../primitives";
 import { CashFlowChart } from "../CashFlowChart";
 
-type ReceivableAging = {
-    notDue: { amount: number; count: number };
-    d1_30: { amount: number; count: number };
-    d31_60: { amount: number; count: number };
-    d61_90: { amount: number; count: number };
-    d90plus: { amount: number; count: number };
-    total: { amount: number; count: number };
-};
+import { customerFinancialSummary, receivableAgingBuckets } from "@/lib/rdash/financial-projections";
+import { useBusinessDate } from "@/lib/rdash/use-business-date";
+export { receivableAgingBuckets } from "@/lib/rdash/financial-projections";
+type ReceivableAging = ReturnType<typeof receivableAgingBuckets>;
 
-/** Buckets open customer invoices by days past their due date. Cancelled and fully paid rows are excluded. */
-export function receivableAgingBuckets(invoices: Array<Pick<import("@/lib/rdash/types").CustomerInvoice, "status" | "balance_amount" | "due_date">>, now = new Date()): ReceivableAging {
-    const aging: ReceivableAging = {
-        notDue: { amount: 0, count: 0 },
-        d1_30: { amount: 0, count: 0 },
-        d31_60: { amount: 0, count: 0 },
-        d61_90: { amount: 0, count: 0 },
-        d90plus: { amount: 0, count: 0 },
-        total: { amount: 0, count: 0 },
-    };
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    for (const invoice of invoices) {
-        if (invoice.status === "cancelled") continue;
-        const balance = Number(invoice.balance_amount || 0);
-        if (balance <= 0) continue;
-        const due = new Date(invoice.due_date || "");
-        const dueStart = Number.isFinite(due.getTime()) ? new Date(due.getFullYear(), due.getMonth(), due.getDate()).getTime() : todayStart;
-        const daysOverdue = Math.floor((todayStart - dueStart) / 86_400_000);
-        const bucket = daysOverdue <= 0 ? aging.notDue
-            : daysOverdue <= 30 ? aging.d1_30
-                : daysOverdue <= 60 ? aging.d31_60
-                    : daysOverdue <= 90 ? aging.d61_90 : aging.d90plus;
-        bucket.amount += balance;
-        bucket.count += 1;
-        aging.total.amount += balance;
-        aging.total.count += 1;
-    }
-    return aging;
-}
 export function FinanceOverviewModule() {
     const db = useRDashStore((state) => state.db);
     const setActiveModule = useRDashStore((state) => state.setActiveModule);
-    const customerReceivable = db.invoices.filter((invoice) => invoice.status !== "cancelled").reduce((total, invoice) => total + invoice.balance_amount, 0);
-    const customerCollected = db.customerReceipts.reduce((total, receipt) => total + receipt.amount, 0);
+    const businessDay = useBusinessDate();
+    const { receivable: customerReceivable, collected: customerCollected } = customerFinancialSummary(db.invoices, db.customerReceipts);
     const vendorPayable = db.vendorBills
         .filter((bill) => bill.status === "approved" || bill.status === "partly_paid" || bill.status === "paid")
         .reduce((total, bill) => total + bill.balance_amount, 0);
@@ -64,7 +31,7 @@ export function FinanceOverviewModule() {
     const siteRows = db.sites.map((site) => ({ site, financials: siteFinancials(db, site.id) }));
     const totalContracted = siteRows.reduce((total, row) => total + row.financials.contracted, 0);
     const totalCost = siteRows.reduce((total, row) => total + row.financials.totalCost, 0);
-    const aging = React.useMemo(() => receivableAgingBuckets(db.invoices), [db.invoices]);
+    const aging = React.useMemo(() => receivableAgingBuckets(db.invoices, businessDay), [db.invoices, businessDay]);
     const overdueAmount = aging.d1_30.amount + aging.d31_60.amount + aging.d61_90.amount + aging.d90plus.amount;
     return <div className="flex flex-col gap-5">
     <div className="flex flex-wrap items-start justify-between gap-3">

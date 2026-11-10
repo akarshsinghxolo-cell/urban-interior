@@ -157,6 +157,11 @@ export function aggregateWorkspaceChangeBatches(input: {
         reason: "invalid_journal",
       });
     }
+    if (parsedOperations.some(operation => operation.collection === "staffRolePermissions" &&
+        (operation.upsert.length > 0 || operation.deleteIds.length > 0))) {
+      return emptyDelta(afterRevision, currentRevision, currentRevision, baselineRevision,
+        { requiresFullReload: true, reason: "permissions_changed" });
+    }
     if (allowedCollections && refreshOnOmittedCollections?.size) {
       const projectedCollectionChanged = parsedOperations.some((operation) =>
         !allowedCollections.has(operation.collection) &&

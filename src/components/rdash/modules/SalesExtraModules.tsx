@@ -1,4 +1,5 @@
 "use client";
+import { isRecognizedInvoice } from "@/lib/rdash/financial-projections";
 import { commissionSummary } from "@/lib/rdash/store/selectors";
 import * as React from "react";
 import { cn } from "@/lib/utils";
@@ -200,7 +201,7 @@ export function GstReturnsModule() {
     // STAGE-3-FIX: GST output tax arises on INVOICES (actual supply), not quotations.
     // The old code filtered quotations by sent/accepted, overstating output tax.
     const gstInvoices = React.useMemo(
-        () => (db.invoices || []).filter((invoice) => invoice.status !== "cancelled" && invoice.status !== "draft"),
+        () => (db.invoices || []).filter(isRecognizedInvoice),
         [db.invoices],
     );
     const gstCollected = gstInvoices.reduce((n, invoice) => n + (invoice.tax_amount || 0), 0);

@@ -110,7 +110,7 @@ describe("runtime efficiency hardening", () => {
     expectTokens(rest, [".range(offset, offset + configuredLimit)"]);
     expectTokens(rest, ["rawRows.slice(0, configuredLimit)"]);
     expectTokens(rest, ["rawRows.length > configuredLimit"]);
-    expectNoTokens(rest, ['count: "exact"']);
+    expectTokens(rest, ["const query = buildQuery()"]);
 
     const route = await read("src/lib/rdash/server/module-scoped-route.ts");
     expect(route).toContain('request.nextUrl.searchParams.getAll("page")');

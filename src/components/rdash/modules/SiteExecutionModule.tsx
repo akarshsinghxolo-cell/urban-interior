@@ -1,4 +1,5 @@
 "use client";
+import { isRecognizedInvoice } from "@/lib/rdash/financial-projections";
 
 import * as React from "react";
 import {
@@ -226,7 +227,7 @@ export function SiteExecutionWorkspace({ siteId, initialTab }: { siteId: string;
   const pos = db.purchaseOrders.filter((purchaseOrder) => purchaseOrder.site_id === selectedSiteId || workOrders.some((workOrder) => workOrder.id === purchaseOrder.work_order_id));
   const grns = db.grns.filter((grn) => workOrders.some((workOrder) => workOrder.id === grn.work_order_id));
   const customerReceipts = db.customerReceipts.filter((receipt) => receipt.site_id === selectedSiteId);
-  const customerInvoices = db.invoices.filter((invoice) => invoice.site_id === selectedSiteId && invoice.status !== "cancelled");
+  const customerInvoices = db.invoices.filter((invoice) => invoice.site_id === selectedSiteId && isRecognizedInvoice(invoice));
   const contractorBills = db.contractorBills.filter((bill) => workOrders.some((workOrder) => workOrder.id === bill.work_order_id));
   const bids = db.contractorBids.filter((bid) => bid.site_id === selectedSiteId);
 

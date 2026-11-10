@@ -1,7 +1,8 @@
 import type { RDashDatabase } from "../types";
 import { customerNameForJob } from "../customer";
-import { computeWorkOrderPnL, computeSitePnLsFromCostLines } from "./finance-helpers";
+import { computeWorkOrderPnL, computeSitePnLsFromCostLines, contractorBillOutstanding } from "./finance-helpers";
 import { latestQuotationRevisions } from "../metrics";
+import { isRecognizedInvoice, customerFinancialSummary } from "../financial-projections";
 
 // G: computeJobPnL now delegates to the canonical `computeWorkOrderPnL`
 // helper in finance-helpers.ts. The two other P&L formulas
@@ -63,7 +64,7 @@ export function vendorExposureRows(db: RDashDatabase) {
 /** Tax report detail and totals share the same document/status selection. */
 export function taxReportProjection(db: RDashDatabase) {
     const rows = [
-        ...db.invoices.filter(invoice => invoice.status !== "cancelled").map(invoice => ({
+        ...db.invoices.filter(isRecognizedInvoice).map(invoice => ({
             kind: "Customer invoice", documentNo: invoice.invoice_no,
             party: invoice.customer_name || "Customer", outputTax: invoice.tax_amount,
             inputTax: 0, status: invoice.status,
@@ -80,12 +81,11 @@ export function taxReportProjection(db: RDashDatabase) {
 }
 
 export function customerBalance(db: RDashDatabase, customerId: string) {
-    const invoices = db.invoices.filter((invoice) => invoice.customer_id === customerId && invoice.status !== "cancelled");
-    const receivable = invoices.reduce((sum, invoice) => sum + invoice.balance_amount, 0);
-    const received = db.customerReceipts
-        .filter((receipt) => receipt.customer_id === customerId)
-        .reduce((sum, receipt) => sum + receipt.amount, 0);
-    return { receivable, received, total: receivable + received };
+    const summary = customerFinancialSummary(
+        db.invoices.filter(invoice => invoice.customer_id === customerId),
+        db.customerReceipts.filter(receipt => receipt.customer_id === customerId),
+    );
+    return { receivable: summary.receivable, received: summary.collected, total: summary.receivable + summary.collected };
 }
 
 export function siteFinancials(db: RDashDatabase, siteId: string) {
@@ -156,8 +156,7 @@ export function contractorBids(db: RDashDatabase, contractorId: string) {
 /** Settlements create a final bill; only recorded payments discharge a bill. */
 export function contractorOutstanding(db: RDashDatabase, contractorId: string, siteId?: string): number {
     return Math.round(db.contractorBills.filter(b => b.contractor_id === contractorId && b.status !== "held" && (!siteId || b.site_id === siteId)).reduce((sum, bill) => {
-        const paid = db.contractorPayments.filter(p => p.contractor_id === contractorId && p.contractor_bill_id === bill.id && p.status === "paid").reduce((n, p) => n + p.amount, 0);
-        return sum + Math.max(0, bill.amount - paid);
+        return sum + contractorBillOutstanding(db, bill);
     }, 0) * 100) / 100;
 }
 

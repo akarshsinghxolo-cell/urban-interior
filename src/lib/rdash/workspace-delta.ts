@@ -18,7 +18,7 @@ export interface WorkspaceDeltaPayload {
   collectionRevisions: Record<string, number>;
   hasMore: boolean;
   requiresFullReload: boolean;
-  reason?: "journal_gap" | "revision_too_old" | "client_ahead" | "invalid_journal" | "projection_changed";
+  reason?: "journal_gap" | "revision_too_old" | "client_ahead" | "invalid_journal" | "projection_changed" | "permissions_changed";
   batchCount: number;
   queryCount?: number;
   loadMs?: number;

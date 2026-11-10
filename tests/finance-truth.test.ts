@@ -48,7 +48,7 @@ describe("recorded cash and projected dues", () => {
         db.invoices = [{ id: "invoice", balance_amount: 6000, status: "partial", due_date: "2026-10-13" }];
         db.payments = [{ id: "milestone", invoice_id: "invoice", amount: 10000, received_amount: 4000, status: "partial", due_date: "2026-10-12" }];
         db.vendorBills = [{ id: "vendor", status: "approved", balance_amount: 50000, due_date: "2026-10-12" }];
-        db.contractorBills = [{ id: "contractor", status: "verified", balance_amount: 4000, due_date: "2026-10-10" }];
+        db.contractorBills = [{ id: "contractor", status: "verified", amount: 4000, balance_amount: 4000, due_date: "2026-10-10" }];
         const flow = cashFlowForecast(db, "2026-10-11");
         expect(flow.totals.inflow).toBe(6000);
         expect(flow.totals.outflow).toBe(54000);

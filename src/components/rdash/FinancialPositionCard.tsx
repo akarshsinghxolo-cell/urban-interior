@@ -1,34 +1,26 @@
 "use client";
 import * as React from "react";
 import { AlertCircle, ArrowDownRight, ArrowUpRight, CalendarClock, IndianRupee, Wallet } from "lucide-react";
-import { useRDashStore } from "@/lib/rdash/store";
+import { contractorOutstandingTotal, useRDashStore } from "@/lib/rdash/store";
 import { formatINR, formatINRShort } from "@/lib/rdash/format";
-import { indiaDate } from "@/lib/rdash/date";
+import { invoiceAgingRows } from "@/lib/rdash/financial-projections";
+import { useBusinessDate } from "@/lib/rdash/use-business-date";
 import { cn } from "@/lib/utils";
 
 /** Receivables aging + payables summary — gives the Owner an instant cash-position view. */
 export function FinancialPositionCard() {
     const db = useRDashStore((s) => s.db);
-    const today = indiaDate();
-    const threeDaysLater = indiaDate(new Date(Date.now() + 3 * 86400000));
-
-    const activeInvoices = db.invoices.filter((inv) => inv.status !== "cancelled" && inv.status !== "paid" && inv.balance_amount > 0);
-    const overdueReceivable = activeInvoices
-        .filter((inv) => inv.due_date && inv.due_date < today)
-        .reduce((sum, inv) => sum + inv.balance_amount, 0);
-    const dueSoonReceivable = activeInvoices
-        .filter((inv) => inv.due_date && inv.due_date >= today && inv.due_date <= threeDaysLater)
-        .reduce((sum, inv) => sum + inv.balance_amount, 0);
-    const currentReceivable = activeInvoices
-        .filter((inv) => !inv.due_date || inv.due_date > threeDaysLater)
-        .reduce((sum, inv) => sum + inv.balance_amount, 0);
+    const today = useBusinessDate();
+    const activeInvoices = invoiceAgingRows(db.invoices, today);
+    const sum = (rows: typeof activeInvoices) => rows.reduce((total, row) => total + row.balance_amount, 0);
+    const overdueReceivable = sum(activeInvoices.filter(invoice => invoice.daysOverdue > 0));
+    const dueSoonReceivable = sum(activeInvoices.filter(invoice => invoice.due_date && invoice.daysOverdue <= 0 && invoice.daysOverdue >= -3));
+    const currentReceivable = sum(activeInvoices.filter(invoice => !invoice.due_date || invoice.daysOverdue < -3));
     const totalReceivable = overdueReceivable + dueSoonReceivable + currentReceivable;
 
     const payableBills = db.vendorBills.filter((bill) => bill.status === "approved" || bill.status === "partly_paid");
     const totalPayable = payableBills.reduce((sum, bill) => sum + bill.balance_amount, 0);
-    const contractorPayable = db.contractorBills
-        .filter((bill) => bill.status !== "held" && bill.status !== "paid" && bill.balance_amount > 0)
-        .reduce((sum, bill) => sum + bill.balance_amount, 0);
+    const contractorPayable = contractorOutstandingTotal(db);
 
     const netPosition = totalReceivable - totalPayable - contractorPayable;
     const maxSegment = Math.max(overdueReceivable, dueSoonReceivable, currentReceivable, 1);
@@ -78,7 +70,7 @@ export function FinancialPositionCard() {
                         <span className="rd-tabular text-xs font-semibold text-foreground">{formatINRShort(contractorPayable)}</span>
                     </div>
                     <div className="flex items-center justify-between rounded-md border border-dashed border-border px-3 py-2">
-                        <span className="text-xs font-medium text-muted-foreground">Net cash position</span>
+                        <span className="text-xs font-medium text-muted-foreground">Net receivables less payables</span>
                         <span className={cn("rd-tabular text-xs font-bold", netPosition >= 0 ? "text-success" : "text-destructive")}>
                             {netPosition >= 0 ? "+" : ""}{formatINRShort(netPosition)}
                         </span>

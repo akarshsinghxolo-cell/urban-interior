@@ -159,6 +159,14 @@ describe("foundation revision state", () => {
 });
 
 describe("collection-filtered server deltas", () => {
+  test("permission changes force session revalidation even for a narrowed collection filter", () => {
+    const result = aggregateWorkspaceChangeBatches({
+      afterRevision: 5, currentRevision: 6, baselineRevision: 0,
+      allowedCollections: new Set(["tasks"]),
+      batches: [{ revision: 6, operations: [{ collection: "staffRolePermissions", upsert: [{ id: "permission", view: false }] }], row_versions: {} }],
+    });
+    expect(result).toMatchObject({ requiresFullReload: true, reason: "permissions_changed", changedRows: {} });
+  });
   test("advances revisions while omitting unrelated collection payloads", () => {
     const result = aggregateWorkspaceChangeBatches({
       afterRevision: 5,
