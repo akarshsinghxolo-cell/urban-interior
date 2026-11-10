@@ -11,6 +11,13 @@ export function isActiveWorkTaxonomy(row: { status?: "active" | "archived" } | u
   return row !== undefined && row.status !== "archived";
 }
 
+/** Prefer the familiar Standard rate; fall back to the first active alternative. */
+export function preferredWorkTypeReplacement(work: WorkSubcategory, removedId: string): WorkTypeRate | undefined {
+  const candidates = workTypesForSubcategory(work)
+    .filter((row) => row.id !== removedId && isActiveWorkTaxonomy(row));
+  return candidates.find((row) => row.name.trim().toLowerCase() === "standard") || candidates[0];
+}
+
 function slug(value: string): string {
   return value
     .trim()

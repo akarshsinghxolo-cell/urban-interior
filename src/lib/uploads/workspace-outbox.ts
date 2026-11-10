@@ -4,6 +4,7 @@ import { applyWorkspaceOperations, diffWorkspaceOperations } from "@/lib/rdash/w
 import type { RDashDatabase } from "@/lib/rdash/types";
 import { uploadIndexedDb } from "./upload-indexed-db";
 import { recoverQueuedCustomerConversationRecord } from "./workspace-outbox-canonical-recovery";
+import { recoverQueuedWorkTypeDeletionRecord } from "./workspace-outbox-taxonomy-recovery";
 import {
   readSpilledWorkspaceCommits,
   replaceSpilledWorkspaceCommits,
@@ -97,6 +98,21 @@ async function recoverCanonicalCustomerConversationOutbox(
   let changed = false;
   for (const item of items) {
     const recovered = recoverQueuedCustomerConversationRecord(item, { base, online });
+    if (!recovered.changed) continue;
+    await uploadIndexedDb.putWorkspaceOutbox(recovered.record);
+    changed = true;
+  }
+  if (changed) await refresh();
+  return changed;
+}
+
+async function recoverQueuedWorkTypeDeletionOutbox(base?: Pick<RDashDatabase, "master"> | null): Promise<boolean> {
+  const items = await readScopedWorkspaceOutbox();
+  if (!items.length) return false;
+  const online = typeof navigator === "undefined" ? true : navigator.onLine;
+  let changed = false;
+  for (const item of items) {
+    const recovered = recoverQueuedWorkTypeDeletionRecord(item, { base, online });
     if (!recovered.changed) continue;
     await uploadIndexedDb.putWorkspaceOutbox(recovered.record);
     changed = true;
@@ -443,6 +459,7 @@ export async function restoreWorkspaceOutboxOverlay(base: RDashDatabase): Promis
   acceptedWorkspace = structuredClone(base) as RDashDatabase;
   await workspaceOutboxStore.hydrate();
   await recoverCanonicalCustomerConversationOutbox(base);
+  await recoverQueuedWorkTypeDeletionOutbox(base);
   const items = (await readScopedWorkspaceOutbox())
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   let db = structuredClone(base) as RDashDatabase;
@@ -488,6 +505,7 @@ export async function flushWorkspaceOutbox(): Promise<WorkspaceOutboxFlushResult
   flushPromise = (async () => {
     await workspaceOutboxStore.hydrate();
     await recoverCanonicalCustomerConversationOutbox(acceptedWorkspace);
+    await recoverQueuedWorkTypeDeletionOutbox(acceptedWorkspace);
     if (typeof navigator !== "undefined" && !navigator.onLine) {
       return { replayed: false, conflict: false };
     }

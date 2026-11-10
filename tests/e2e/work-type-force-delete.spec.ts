@@ -60,9 +60,9 @@ test("used work type can be moved to the next type and force deleted", async ({ 
   await page.getByText(`QA Force Delete ${suffix}`, { exact: true }).click();
   await page.getByRole("button", { name: "Delete Hehsh", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Force delete Hehsh", exact: true });
-  await expect(dialog.getByLabel("Replacement work type")).toHaveValue(replacementId);
+  await expect(dialog).toContainText("automatically move to Premium");
   const saved = page.waitForResponse((response) => response.url().includes("/api/operations/commit") && response.request().method() === "POST");
-  await dialog.getByRole("button", { name: "Move to Premium and delete", exact: true }).click();
+  await dialog.getByRole("button", { name: "Delete work type", exact: true }).click();
   expect((await saved).status()).toBe(200);
   await expect(page.getByRole("button", { name: "Delete Hehsh", exact: true })).toHaveCount(0);
 
