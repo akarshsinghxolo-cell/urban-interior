@@ -85,7 +85,7 @@ export function workTaxonomyReferences(db: RDashDatabase, kind: WorkTaxonomyKind
     }
 
     return collections.flatMap(([collection, rows]) => {
-        if (kind === "workType" && collection === "auditLog") return [];
+        if (kind !== "category" && collection === "auditLog") return [];
         const count = rows.filter((row) => {
             if (!row || typeof row !== "object") return false;
             const record = row as Record<string, unknown>;
@@ -143,7 +143,7 @@ export function forceDeleteWorkType(db: RDashDatabase, workId: string, sourceId:
     const work = db.master.workSubcategories.find((row) => row.id === workId);
     const source = work && workTypesForSubcategory(work).find((row) => row.id === sourceId);
     const replacement = work && workTypesForSubcategory(work).find((row) => row.id === replacementId);
-    if (!work || !source || !replacement || sourceId === replacementId) throw new Error("A valid replacement work type from the same subcategory is required.");
+    if (!work || !source || !replacement || replacement.status === "archived" || sourceId === replacementId) throw new Error("An active replacement work type from the same subcategory is required.");
 
     const now = new Date().toISOString();
     const movedReferences = workTaxonomyReferences(db, "workType", sourceId).reduce((sum, row) => sum + row.count, 0);
@@ -152,6 +152,7 @@ export function forceDeleteWorkType(db: RDashDatabase, workId: string, sourceId:
     next.master.workSubcategories = db.master.workSubcategories.map((row) => row.id === workId ? {
         ...(replaceWorkTypeReference(row, sourceId, replacementId, source.name, replacement.name) as WorkSubcategory),
         work_types: workTypesForSubcategory(row).filter((entry) => entry.id !== sourceId),
+        work_type_replacements: { ...row.work_type_replacements, [sourceId]: replacementId },
         updated_at: now,
     } : replaceWorkTypeReference(row, sourceId, replacementId, source.name, replacement.name) as WorkSubcategory);
     next.workRequired = next.workRequired.map((row, index) => {
@@ -190,6 +191,49 @@ export function forceDeleteWorkType(db: RDashDatabase, workId: string, sourceId:
         };
     });
     return { db: next, movedReferences };
+}
+
+/** Remove the offered service; keep a non-selectable identity only for historical records. */
+export function deleteWorkSubcategory(db: RDashDatabase, workId: string): RDashDatabase {
+    const work = db.master.workSubcategories.find((row) => row.id === workId);
+    if (!work || work.id.startsWith("deleted-subcategory:")) throw new Error("Subcategory is unavailable.");
+    const placeholderId = `deleted-subcategory:${work.id}`;
+    const sourceName = work.name;
+    const mapIds = new Set(db.master.subcategoryArticleMap.filter((row) => row.work_required_id === workId).map((row) => row.id));
+    const next = structuredClone(db);
+    next.master.workSubcategories = next.master.workSubcategories.filter((row) => row.id !== workId && row.id !== placeholderId);
+    next.master.subcategoryArticleMap = next.master.subcategoryArticleMap.filter((row) => !mapIds.has(row.id));
+    next.master.contractorRates = next.master.contractorRates.filter((row) => row.work_subcategory_id !== workId);
+    next.master.contractors = next.master.contractors.map((row) => ({
+        ...row,
+        work_capabilities: row.work_capabilities?.filter((entry) => entry.subcategory_id !== workId),
+        specializations: row.specializations?.filter((name) => name !== work.name && !name.startsWith(`${work.name} · `)),
+        trade: row.trade === work.name || row.trade?.startsWith(`${work.name} · `) ? undefined : row.trade,
+    }));
+    const hasHistory = workTaxonomyReferences(next, "subcategory", workId).length > 0
+        || workTaxonomyReferences(next, "subcategory", placeholderId).length > 0;
+    function replace(value: unknown): unknown {
+        if (value === workId) return placeholderId;
+        if (typeof value === "string" && mapIds.has(value)) return undefined;
+        if (Array.isArray(value)) return value.map(replace).filter((entry) => entry !== undefined);
+        if (!value || typeof value !== "object") return value;
+        const row = value as Record<string, unknown>;
+        const result = Object.fromEntries(Object.entries(row).map(([key, entry]) => [key, replace(entry)]));
+        if (containsExactId(row, workId)) {
+            for (const key of ["title", "subcategory_name", "work_subcategory_name"]) {
+                if (typeof row[key] === "string") result[key] = row[key].replaceAll(sourceName, "Deleted subcategory");
+            }
+        }
+        return result;
+    }
+    const result = replace(next) as RDashDatabase;
+    result.auditLog = db.auditLog;
+    if (hasHistory) result.master.workSubcategories.push({
+        id: placeholderId, name: "Deleted subcategory", category_id: work.category_id,
+        category_ids: work.category_ids, unit_id: work.unit_id, work_types: workTypesForSubcategory(work),
+        status: "archived", archive_reason: "Historical reference only; service deleted", updated_at: new Date().toISOString(),
+    });
+    return result;
 }
 export function resolveUnitId(value: string | undefined) {
     const normalized = normalizeCatalogName(value).replace(/\./g, "");
@@ -446,6 +490,7 @@ export function getCatalogIssues(master: Master): CatalogIssue[] {
     const workNames = new Set<string>();
     const workNamesAcrossCategories = new Map<string, WorkSubcategory[]>();
     master.workSubcategories.forEach((item) => {
+        if (item.id.startsWith("deleted-subcategory:")) return;
         const normalizedWorkName = normalizeCatalogName(item.name);
         const keys = workSubcategoryCategoryIds(item).map((id) => `${id}:${normalizedWorkName}`);
         workNamesAcrossCategories.set(normalizedWorkName, [...(workNamesAcrossCategories.get(normalizedWorkName) || []), item]);

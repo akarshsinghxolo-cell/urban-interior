@@ -3,13 +3,16 @@ import type { AuditLogEntry, RDashDatabase } from "../types";
 import { validateBusinessData } from "../business-rules";
 import { attachCustomerLabels } from "../customer";
 import { canonicalizeCustomerRow } from "../customer-record";
-import { prepareWorkspaceData } from "../work-category-master";
+import { deleteWorkSubcategory, forceDeleteWorkType, prepareWorkspaceData } from "../work-category-master";
+import { workTypesForSubcategory } from "../work-types";
 import { repairOperationalWorkspace } from "../operational-repair";
 import { reconcileFollowupRecovery, validateFollowupRecovery } from "../followup-recovery";
 import {
   applyWorkspaceOperations,
   diffWorkspaceOperations,
   operationSummary,
+  topLevelCollections,
+  masterCollections,
   type WorkspaceOperation,
 } from "../workspace-operations";
 import type { AuthenticatedUser } from "./auth";
@@ -211,6 +214,11 @@ function canonicalizeContractorRateOperations(
 
 function validationReadPlan(user: AuthenticatedUser, operations: WorkspaceOperation[]): WorkspaceReadPlan {
   const fullCollections = new Set<string>();
+  // Deletion must include references in modules the browser has not opened.
+  if (operations.some((op) => op.collection === "master.workSubcategories" && (op.deleteIds?.length || op.upsert?.some((row) => row.work_type_replacements)))) {
+    for (const collection of topLevelCollections) fullCollections.add(String(collection));
+    for (const collection of masterCollections) fullCollections.add(`master.${collection}`);
+  }
 
   for (const operation of operations) {
     fullCollections.add(operation.collection);
@@ -336,7 +344,32 @@ export async function commitAuthorizedPostgresOperations(
     commitOperations = canonicalizeVendorRateOperations(current.data, commitOperations);
     commitOperations = canonicalizeContractorRateOperations(current.data, commitOperations);
     const baseline = normalizeWorkspace(current.data);
-    const submitted = applyWorkspaceOperations(current.data, commitOperations);
+    let submitted = applyWorkspaceOperations(current.data, commitOperations);
+    for (const row of commitOperations.filter((op) => op.collection === "master.workSubcategories").flatMap((op) => op.upsert || [])) {
+      const original = current.data.master.workSubcategories.find((entry) => entry.id === row.id);
+      const changed = submitted.master.workSubcategories.find((entry) => entry.id === row.id);
+      if (!original || !changed) continue;
+      const removed = workTypesForSubcategory(original).filter((type) => !workTypesForSubcategory(changed).some((entry) => entry.id === type.id));
+      for (const source of removed) {
+        const replacementId = changed.work_type_replacements?.[source.id];
+        if (!replacementId) throw new Error("INVALID:Choose a replacement work type before deleting.");
+        const currentWork = submitted.master.workSubcategories.find((entry) => entry.id === row.id)!;
+        currentWork.work_types = [...workTypesForSubcategory(currentWork), source];
+        submitted = forceDeleteWorkType(submitted, original.id, source.id, replacementId).db;
+      }
+      const savedWork = submitted.master.workSubcategories.find((entry) => entry.id === row.id);
+      if (savedWork) delete savedWork.work_type_replacements;
+    }
+    for (const id of commitOperations.filter((op) => op.collection === "master.workSubcategories").flatMap((op) => op.deleteIds || [])) {
+      const original = current.data.master.workSubcategories.find((row) => row.id === id);
+      if (!original) continue;
+      submitted.master.workSubcategories.push(original);
+      // The browser may already have removed links without loading their historical consumers.
+      for (const link of current.data.master.subcategoryArticleMap.filter((entry) => entry.work_required_id === id)) {
+        if (!submitted.master.subcategoryArticleMap.some((entry) => entry.id === link.id)) submitted.master.subcategoryArticleMap.push(link);
+      }
+      submitted = deleteWorkSubcategory(submitted, id);
+    }
     validateFollowupRecovery(current.data, submitted, commitOperations.filter((op) => op.collection === "tasks").flatMap((op) => (op.upsert || []).map((row) => String(row.id))));
     const rawCandidate = reconcileFollowupRecovery(submitted);
     commitOperations = diffWorkspaceOperations(current.data, rawCandidate);

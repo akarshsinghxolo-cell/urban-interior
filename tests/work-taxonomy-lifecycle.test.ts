@@ -1,9 +1,45 @@
 import { describe, expect, test } from "vitest";
 import { buildSeedDatabase } from "../src/lib/rdash/seed";
-import { forceDeleteWorkType, workTaxonomyReferences } from "../src/lib/rdash/work-category-master";
+import { deleteWorkSubcategory, forceDeleteWorkType, workTaxonomyReferences } from "../src/lib/rdash/work-category-master";
 import { isActiveWorkTaxonomy, withPrimaryWorkTypeIds, workTypesForSubcategory } from "../src/lib/rdash/work-types";
 
 describe("work taxonomy lifecycle", () => {
+  test("deleting a service preserves customer history but removes capabilities and material links", () => {
+    const db = buildSeedDatabase();
+    const sub = db.master.workSubcategories[0];
+    const type = workTypesForSubcategory(sub)[0];
+    const map = db.master.subcategoryArticleMap.find((row) => row.work_required_id === sub.id)!;
+    db.workRequired[0].work_subcategory_ids = [sub.id];
+    db.workRequired[0].work_type_ids = [type.id];
+    db.workRequired[0].title = `${sub.name} · ${type.name}`;
+    const line = { id: "history-line", title: sub.name, subcategory_id: sub.id, work_type_id: type.id,
+      work_required_article_id: map.id, quantity: 7, rate: 125, amount: 875 };
+    db.quotations[0].scope_lines = [line];
+    db.quotations[0].items = [line];
+    db.master.contractors[0].work_capabilities = [{ subcategory_id: sub.id, work_type_rates: [{ work_type_id: type.id }] },
+      { subcategory_id: "unrelated", work_type_rates: [] }];
+    const result = deleteWorkSubcategory(db, sub.id);
+    expect(result.master.workSubcategories.some((row) => row.id === sub.id)).toBe(false);
+    expect(result.master.workSubcategories.find((row) => row.id === `deleted-subcategory:${sub.id}`)).toMatchObject({ name: "Deleted subcategory", status: "archived" });
+    expect(result.master.subcategoryArticleMap.some((row) => row.work_required_id === sub.id)).toBe(false);
+    expect(result.master.contractors[0].work_capabilities).toEqual([{ subcategory_id: "unrelated", work_type_rates: [] }]);
+    expect(result.master.contractors).toHaveLength(db.master.contractors.length);
+    expect(result.master.articles).toEqual(db.master.articles);
+    expect(result.workRequired[0].title).toContain("Deleted subcategory");
+    expect(result.quotations[0].scope_lines[0]).toMatchObject({ title: "Deleted subcategory", quantity: 7, rate: 125, amount: 875 });
+    expect(result.quotations[0].scope_lines[0].work_required_article_id).toBeUndefined();
+    expect(workTaxonomyReferences(result, "subcategory", sub.id)).toEqual([]);
+    expect(db.quotations[0].scope_lines[0].subcategory_id).toBe(sub.id);
+  });
+
+  test("replacement need not be Standard and must be active", () => {
+    const db = buildSeedDatabase();
+    const sub = db.master.workSubcategories[0];
+    sub.work_types = [{ id: "old", name: "Old" }, { id: "premium", name: "Premium" }];
+    expect(forceDeleteWorkType(db, sub.id, "old", "premium").db.master.workSubcategories[0].work_types).toHaveLength(1);
+    sub.work_types[1].status = "archived";
+    expect(() => forceDeleteWorkType(db, sub.id, "old", "premium")).toThrow("active replacement");
+  });
   test("treats existing rows as active and archived rows as unavailable", () => {
     expect(isActiveWorkTaxonomy({})).toBe(true);
     expect(isActiveWorkTaxonomy({ status: "active" })).toBe(true);

@@ -1570,6 +1570,8 @@ export interface WorkSubcategory {
     archive_reason?: string;
     unit_id?: ID;
     work_types?: WorkTypeRate[];
+    /** Reassignment intent, consumed by the server against all references before saving. */
+    work_type_replacements?: Record<ID, ID>;
     notes?: string;
     work_required_article_ids?: ID[];
     created_at?: string;

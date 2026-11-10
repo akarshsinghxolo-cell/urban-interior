@@ -116,6 +116,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
     const db = useRDashStore((s) => s.db);
     const mutateMaster = useRDashStore((s) => s.mutateMaster);
     const forceDeleteWorkType = useRDashStore((s) => s.forceDeleteWorkType);
+    const deleteWorkSubcategory = useRDashStore((s) => s.deleteWorkSubcategory);
     const master = db.master;
     const [view, setView] = React.useState<WorkCategoryMasterView>(initialView);
     const [query, setQuery] = React.useState("");
@@ -127,10 +128,11 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
     const [unitDialogOpen, setUnitDialogOpen] = React.useState(false);
     const [articleDialogOpen, setArticleDialogOpen] = React.useState(false);
     const [savingTaxonomy, setSavingTaxonomy] = React.useState(false);
+    const [workTypeDeletion, setWorkTypeDeletion] = React.useState<{ workId: string; sourceId: string; replacementId: string } | null>(null);
     React.useEffect(() => setView(initialView), [initialView]);
     const workByCategory = React.useMemo(() => {
         const map = new Map<string, WorkSubcategory[]>();
-        master.workSubcategories.forEach((item) => workSubcategoryCategoryIds(item).forEach((categoryId) => map.set(categoryId, [...(map.get(categoryId) || []), item])));
+        master.workSubcategories.filter((item) => !item.id.startsWith("deleted-subcategory:")).forEach((item) => workSubcategoryCategoryIds(item).forEach((categoryId) => map.set(categoryId, [...(map.get(categoryId) || []), item])));
         return map;
     }, [master.workSubcategories]);
     const scopesByWork = React.useMemo(() => {
@@ -364,29 +366,25 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
             });
         }
     }
-    async function removeWorkType(workId: string, workTypeId: string) {
+    async function removeWorkType(workId: string, workTypeId: string, selectedReplacementId?: string) {
         const work = workFor(master, workId);
         const workTypes = work ? workTypesForSubcategory(work) : [];
         const workType = workTypes.find((row) => row.id === workTypeId);
         if (!work || !workType) return;
         if (workTypes.length === 1) return toast.error("A sub category must keep at least one work type. Add a replacement first.");
-        const workTypeIndex = workTypes.findIndex((row) => row.id === workTypeId);
-        const replacementOrder = [...workTypes.slice(workTypeIndex + 1), ...workTypes.slice(0, workTypeIndex)];
-        const replacement = replacementOrder.find(isActiveWorkTaxonomy) || replacementOrder[0];
-        if (!replacement) return toast.error("Add a replacement work type before deleting this one.");
+        const replacements = workTypes.filter((row) => row.id !== workTypeId && isActiveWorkTaxonomy(row));
+        if (!replacements.length) return toast.error("Add or restore an active replacement work type before deleting this one.");
+        if (!selectedReplacementId) {
+            setWorkTypeDeletion({ workId, sourceId: workTypeId, replacementId: replacements[0].id });
+            return;
+        }
+        const replacement = replacements.find((row) => row.id === selectedReplacementId);
+        if (!replacement) return toast.error("Choose an available replacement work type.");
         const references = workTaxonomyReferences(db, "workType", workTypeId);
-        const ok = await confirmDialog({
-            title: references.length ? `Force delete ${workType.name}` : `Delete unused work type ${workType.name}`,
-            description: references.length
-                ? `${workTaxonomyReferenceSummary(references)} will be moved to ${replacement.name}. The old work type will then be permanently deleted.`
-                : "This work type has no customer, contractor, quotation or other business references.",
-            confirmLabel: references.length ? `Move to ${replacement.name} and delete` : "Delete work type",
-            danger: true,
-        });
-        if (!ok) return;
         const saved = await saveTaxonomyChange(() => forceDeleteWorkType(workId, workTypeId, replacement.id), references.length
             ? `${workType.name} references moved to ${replacement.name}; old work type deleted.`
             : "Unused work type deleted.");
+        if (saved) setWorkTypeDeletion(null);
         if (saved && references.length) {
             const actor = useRDashStore.getState().currentUser();
             useRDashStore.getState().logAudit({
@@ -431,22 +429,14 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
     async function removeWorkItem(workId: string) {
         const work = workFor(master, workId);
         if (!work) return;
-        const references = workTaxonomyReferences(db, "subcategory", workId);
-        if (references.length) {
-            toast.error(`${work.name} is still in use. Archive it instead.`, { description: workTaxonomyReferenceSummary(references) });
-            return;
-        }
         const ok2 = await confirmDialog({
-            title: `Delete unused subcategory ${work.name}`,
-            description: "This subcategory has no scoped materials, capabilities or business references. Other catalogue records will not be removed.",
+            title: `Delete subcategory ${work.name}`,
+            description: "Existing Work Required and quotations will show Deleted subcategory, with quantities and prices preserved. Its scoped material links, contractor capabilities and contractor rates will be removed. Contractors and articles themselves will not be deleted.",
             confirmLabel: "Delete subcategory",
             danger: true,
         });
         if (!ok2) return;
-        await saveTaxonomyChange(() => updateMaster((current) => ({
-            ...current,
-            workSubcategories: current.workSubcategories.filter((item) => item.id !== workId),
-        })), "Unused subcategory deleted.");
+        await saveTaxonomyChange(() => deleteWorkSubcategory(workId), "Subcategory deleted; customer history preserved.");
     }
     async function setWorkItemArchived(workId: string, archived: boolean) {
         const work = workFor(master, workId);
@@ -787,7 +777,24 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
         });
         toast.success("Safe catalogue repair completed.");
     }
+    const deletingWork = master.workSubcategories.find((row) => row.id === workTypeDeletion?.workId);
+    const deletingType = deletingWork && workTypesForSubcategory(deletingWork).find((row) => row.id === workTypeDeletion?.sourceId);
+    const replacementTypes = deletingWork ? workTypesForSubcategory(deletingWork).filter((row) => row.id !== deletingType?.id && isActiveWorkTaxonomy(row)) : [];
+    const replacementType = replacementTypes.find((row) => row.id === workTypeDeletion?.replacementId);
     return (<div className="flex min-w-0 max-w-full flex-col gap-5">
+      <Dialog open={Boolean(workTypeDeletion)} onOpenChange={(open) => !open && !savingTaxonomy && setWorkTypeDeletion(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Force delete {deletingType?.name}</DialogTitle>
+            <DialogDescription>Existing references will move to the work type you choose. Historical quantities and prices stay unchanged. The old work type will be permanently deleted.</DialogDescription>
+          </DialogHeader>
+          <Field label="Replacement work type"><NativeSelect value={workTypeDeletion?.replacementId || ""} disabled={savingTaxonomy} onChange={(event) => setWorkTypeDeletion((value) => value && ({ ...value, replacementId: event.target.value }))}>
+            {replacementTypes.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
+          </NativeSelect></Field>
+          <DialogFooter><Button variant="outline" disabled={savingTaxonomy} onClick={() => setWorkTypeDeletion(null)}>Cancel</Button>
+            <Button variant="destructive" disabled={savingTaxonomy || !replacementType} onClick={() => workTypeDeletion && void removeWorkType(workTypeDeletion.workId, workTypeDeletion.sourceId, workTypeDeletion.replacementId)}>{savingTaxonomy ? "Saving…" : `Move to ${replacementType?.name || "replacement"} and delete`}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><Layers3 className="h-5 w-5"/></span>
