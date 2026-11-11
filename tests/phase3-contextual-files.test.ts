@@ -349,7 +349,7 @@ describe("Phase 3 re-audit", () => {
     expect(store).toContain("releaseDeferredBatch");
     expect(store).toContain("discardDeferredBatch");
     expect(store).toContain("staleDraftItems");
-    expectTokens(store, ["if (item.deferred) {"]);
+    expectTokens(store, ["if (item.deferred || !mayHaveStarted) {"]);
     expect(draft).toContain("releaseDeferredBatch(batchId)");
     expect(draft).toContain("discardDeferredBatch(batchId)");
     expectTokens(card, ["deferProcessing: Boolean(registerBatch)"]);

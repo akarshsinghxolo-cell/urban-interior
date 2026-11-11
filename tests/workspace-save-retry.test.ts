@@ -6,6 +6,10 @@ vi.mock("../src/lib/uploads/upload-indexed-db", () => ({ uploadIndexedDb: {
     readWorkspaceOutbox: async () => [...records.values()],
     getWorkspaceOutbox: async (id: string) => records.get(id),
     putWorkspaceOutbox: async (row: WorkspaceCommitOutboxRecord) => { records.set(row.operationId, row); },
+    replaceWorkspaceOutbox: async (row: WorkspaceCommitOutboxRecord, replacedIds: string[]) => {
+        replacedIds.forEach((id) => records.delete(id));
+        records.set(row.operationId, row);
+    },
     deleteWorkspaceOutbox: async (id: string) => { records.delete(id); },
 } }));
 import { captureWorkspaceCommit, configureWorkspaceOutboxScope, markWorkspaceCommitResponse } from "../src/lib/uploads/workspace-outbox";

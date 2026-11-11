@@ -83,7 +83,8 @@ describe("canonical runtime only", () => {
     const workTypes = source("src/lib/rdash/work-types.ts");
     const receipts = source("src/app/api/operations/commit/route.ts");
 
-    expect(rootPage).toContain("redirect(WORKSPACE_ROOT_PATH)");
+    expect(rootPage).toContain('href="/signin"');
+    expect(rootPage).toContain("Privacy policy");
     expect(rootPage).not.toContain("UrbanCastleApp");
     expect(types).toContain('applies_to: "partner" | "category"');
     expect(types).not.toContain('applies_to: "all" | "category" | "workOrder"');
