@@ -58,7 +58,7 @@ export async function dismissOnboardingTourIfPresent(page: Page): Promise<void> 
  */
 export async function openCustomersDeskModule(page: Page): Promise<void> {
   // Always start from the signed-in workdesk (callers may hold a blank page).
-  await page.goto("/");
+  await page.goto("/workspace");
 
   // Desktop shows the sidebar directly (expanded or as an icon rail); mobile
   // tucks navigation behind "Open navigation". Try the direct click first and

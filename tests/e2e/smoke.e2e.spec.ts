@@ -31,17 +31,17 @@ import {
 test.describe("auth", () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
-  test("unauthenticated visitors are redirected from / to the sign-in screen", async ({
+  test("unauthenticated visitors are redirected from /workspace to the sign-in screen", async ({
     page,
   }) => {
-    await page.goto("/");
+    await page.goto("/workspace");
     await expect(page).toHaveURL(/\/signin/, { timeout: 90_000 });
     await expect(page.getByLabel("Work email")).toBeVisible();
     await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
   });
 
   test("sign-in through the real form lands on the workdesk", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/signin");
     await expect(page).toHaveURL(/\/signin/, { timeout: 90_000 });
     await page.getByLabel("Work email").fill(QA_OWNER_EMAIL);
     await page.getByLabel("Password", { exact: true }).fill(QA_OWNER_PASSWORD);
@@ -60,7 +60,7 @@ test.describe("auth", () => {
   test("the owner-approved static super-owner credential signs in through the real form", async ({
     page,
   }) => {
-    await page.goto("/");
+    await page.goto("/signin");
     await expect(page).toHaveURL(/\/signin/, { timeout: 90_000 });
     await page.getByLabel("Work email").fill(SUPER_OWNER_EMAIL);
     await page.getByLabel("Password", { exact: true }).fill(SUPER_OWNER_PASSWORD);
@@ -288,7 +288,7 @@ test.describe("customer drawer", () => {
 
 test.describe("signed-out flow", () => {
   test("sign-out from the profile menu returns to /signin", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/workspace");
 
     await page.getByRole("button", { name: "Open profile menu" }).click();
     await page.getByRole("menuitem", { name: "Sign out" }).click();
@@ -302,7 +302,7 @@ test.describe("mobile overflow guard (390×844)", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
   test("workdesk never scrolls horizontally on a phone viewport", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/workspace");
     await expect(pulseRegion(page)).toBeVisible({ timeout: 90_000 });
     await expectNoHorizontalOverflow(page, "workdesk @390px");
   });
