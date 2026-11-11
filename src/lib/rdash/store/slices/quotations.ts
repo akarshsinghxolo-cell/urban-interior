@@ -45,7 +45,7 @@ export function nextQuotationNo(
  * `upsertQuotationFollowup`) live here as module-scope helpers.
  */
 import type {
-    Quotation, QuotationItem, WorkOrder, Followup,
+    Quotation, QuotationItem, WorkOrder, Followup, WorkRequired,
 } from "../../types";
 import type { QuotationsState } from "../types";
 import { activeStaffIdForRole } from "../../staff-directory";
@@ -56,7 +56,7 @@ import { cascadeDelete } from "../../integrity/cascade";
 import { advanceSitesStage } from "../../site-lifecycle";
 import { findOpenLinkedFollowup } from "../finance-helpers";
 import { acceptedScopeOverlapsCoverage, canPermanentlyDeleteQuotation, coverageAcceptedValue, quotationAcceptanceWarnings, resolveQuotationDefaults } from "../quotations-helpers";
-import { groupedQuotationScopeLines } from "../../work-types";
+import { groupedQuotationScopeLines, workRequiredTitleFromSelection } from "../../work-types";
 import { quotationLineAmount, quotationTotals } from "../../quotation-extra-columns";
 import {
     assertWorkOrderStatusTransition,
@@ -594,10 +594,33 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
             return id;
         },
         addQuotationItem: (quotationId, item) => {
-            const quotation = get().db.quotations.find((row: any) => row.id === quotationId);
+            const db = get().db;
+            const quotation = db.quotations.find((row: any) => row.id === quotationId);
             if (!quotation)
                 throw new Error("Quotation not found.");
             assertQuotationEditable(quotation, "add a quotation line");
+            // A catalogued work type is business scope, not a quotation-only
+            // note. Attach it to one of this quotation's covered Work Required
+            // records so Customer Edit, measurement and execution all read the
+            // same updated selection immediately.
+            let targetWork: WorkRequired | undefined;
+            const addedPair = item.subcategory_id && item.work_type_id
+                ? { subcategoryId: item.subcategory_id, workTypeId: item.work_type_id }
+                : undefined;
+            if (addedPair) {
+                const coveredWork = quotation.coverage
+                    .map((coverage: any) => db.workRequired.find((work: WorkRequired) => work.id === coverage.work_required_id))
+                    .filter((work: WorkRequired | undefined): work is WorkRequired => Boolean(work));
+                targetWork = item.work_required_id
+                    ? coveredWork.find((work: WorkRequired) => work.id === item.work_required_id)
+                    : coveredWork.find((work: WorkRequired) => (work.work_subcategory_ids || []).includes(addedPair.subcategoryId)
+                        && (work.work_type_ids || []).includes(addedPair.workTypeId))
+                        || coveredWork.find((work: WorkRequired) => (work.work_subcategory_ids || []).includes(addedPair.subcategoryId))
+                        || coveredWork[0];
+                if (!targetWork) {
+                    throw new Error("Link this quotation to Site Work Required before adding a work type.");
+                }
+            }
             const quantity = item.quantity ?? 1;
             const rate = item.rate ?? 0;
             const newItem: QuotationItem = {
@@ -612,7 +635,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                 // pair renders/prices like any captured single-pair line.
                 subcategory_id: item.subcategory_id,
                 work_type_id: item.work_type_id,
-                work_required_id: item.work_required_id,
+                work_required_id: targetWork?.id || item.work_required_id,
                 site_id: item.site_id || quotation.site_id,
                 area_id: item.area_id,
                 site_name: item.site_name,
@@ -630,23 +653,38 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                 source_item_id: item.source_item_id,
             };
             const scopeLines = [...quotation.scope_lines, newItem];
-            assertQuotationRelations(get().db, { ...quotation, scope_lines: scopeLines, items: scopeLines }, "Quotation");
             newItem.amount = quotationLineAmount(newItem);
             const totals = quotationTotals(scopeLines);
-            commitState((state: any) => ({
-                db: {
-                    ...state.db,
-                    quotations: state.db.quotations.map((row: any) => row.id === quotationId
-                        ? {
-                            ...row,
-                            scope_lines: scopeLines,
-                            items: scopeLines,
-                            ...totals,
-                            updated_at: nowIso(),
-                        }
-                        : row),
-                },
-            }));
+            const changedAt = nowIso();
+            const nextWorkRequired = targetWork && addedPair
+                ? db.workRequired.map((work: WorkRequired) => {
+                    if (work.id !== targetWork.id)
+                        return work;
+                    const workSubcategoryIds = [...new Set([...(work.work_subcategory_ids || []), addedPair.subcategoryId])];
+                    const workTypeIds = [...new Set([...(work.work_type_ids || []), addedPair.workTypeId])];
+                    return {
+                        ...work,
+                        work_subcategory_ids: workSubcategoryIds,
+                        work_type_ids: workTypeIds,
+                        title: workRequiredTitleFromSelection(db.master.workSubcategories, workSubcategoryIds, workTypeIds) || work.title,
+                        updated_at: changedAt,
+                    };
+                })
+                : db.workRequired;
+            const nextQuotation = {
+                ...quotation,
+                scope_lines: scopeLines,
+                items: scopeLines,
+                ...totals,
+                updated_at: changedAt,
+            };
+            const nextDb = {
+                ...db,
+                workRequired: nextWorkRequired,
+                quotations: db.quotations.map((row: Quotation) => row.id === quotationId ? nextQuotation : row),
+            };
+            assertQuotationRelations(nextDb, nextQuotation, "Quotation");
+            commitState({ db: nextDb });
         },
         updateQuotationItem: (quotationId, itemId, patch) => {
             const quotation = get().db.quotations.find((row: any) => row.id === quotationId);

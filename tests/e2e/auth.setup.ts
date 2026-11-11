@@ -15,6 +15,12 @@ import { STORAGE_STATE_PATH } from "./helpers/config";
 test("authenticate as the seeded owner", async ({ page }) => {
   await page.goto("/");
 
+  // The public OAuth-verification homepage now sits at `/`; older builds
+  // redirected straight to sign-in. Support both without bypassing the real
+  // sign-in form used by the rest of the browser suite.
+  if (!/\/signin/.test(page.url())) {
+    await page.getByRole("link", { name: "Sign in", exact: true }).click();
+  }
   await expect(page).toHaveURL(/\/signin/, { timeout: 90_000 });
   const workEmail = page.getByLabel("Work email");
   await expect(workEmail).toBeVisible({ timeout: 60_000 });

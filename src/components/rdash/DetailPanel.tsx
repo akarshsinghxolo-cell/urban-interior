@@ -11,7 +11,7 @@ import { contractorSettlementAmounts } from "@/lib/rdash/store/finance-helpers";
 import { ThreadView, Field, StatusPill, LineItemTable } from "./ThreadPanel";
 import { Avatar, StatusBadge } from "./primitives";
 import { quotationStatusStyle, paymentStatusStyle, invoiceStatusStyle, jobStatusStyle, visitStatusStyle, poStatusStyle, grnStatusStyle, dispatchStatusStyle, vendorBillStatusStyle, commissionStatusStyle, followupStatusStyle, formatINR, formatINRShort, formatDate, titleCase, } from "@/lib/rdash/format";
-import { workRequiredDisplayTitle, areaChipQuantity, linePairBoxes, removeOptionPair, capturedPairsTitle, omittedOptedPairs, workTypesForSubcategory, averageWorkTypeTotalRate } from "@/lib/rdash/work-types";
+import { workRequiredDisplayTitle, areaChipQuantity, linePairBoxes, removeOptionPair, capturedPairsTitle, omittedOptedPairs, workTypesForSubcategory, averageWorkTypeTotalRate, isActiveWorkTaxonomy, itemOptionPairs } from "@/lib/rdash/work-types";
 import { toast } from "sonner";
 import { notifyCompleted } from "@/lib/rdash/notify";
 import { staffNameForId } from "@/lib/rdash/staff-directory";
@@ -941,7 +941,7 @@ function QuotationOverview({ q }: {
             <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs sm:border-l sm:border-border sm:pl-3"><div><dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Issued</dt><dd className="mt-0.5 font-medium">{formatDate(q.created_at)}</dd></div><div><dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Valid until</dt><dd className="mt-0.5 font-medium">{formatDate(q.valid_until)}</dd></div><div><dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Revision</dt><dd className="mt-0.5 font-medium">{q.revision_no}</dd></div><div><dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Scope lines</dt><dd className="mt-0.5 font-medium">{q.scope_lines.length}</dd></div></dl>
           </section>
           <section><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Project proposal</p><h2 className="mt-1 grid grid-cols-2 gap-y-2 text-base font-bold leading-relaxed text-foreground">{spacedQuotationTitle(q.title, db).split(/ {6,}/).filter(Boolean).map((title, index) => <span key={index} className="min-w-0 whitespace-normal break-words pr-4">{title}</span>)}</h2>{q.parent_quotation_id && <p className="mt-1 text-[11px] text-muted-foreground">Revision of {db.quotations.find((x) => x.id === q.parent_quotation_id)?.quotation_no || "earlier quotation"}</p>}</section>
-      <section className="quotation-scope-section overflow-hidden rounded-lg border border-border">
+      <section className="quotation-scope-section overflow-visible rounded-lg border border-border print:overflow-hidden">
         <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/40 px-3 py-2"><div><p className="text-xs font-bold">Scope & pricing</p><p className="text-[10px] text-muted-foreground">Room-wise measured quantities and agreed rates</p></div><div className="no-print flex items-center gap-2">{isEditable && <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-[10px]" onClick={() => void addExtraColumn()}><Plus className="mr-1 h-3 w-3"/>Add work column</Button>}{isEditable && <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">Draft · editable</span>}</div></div>
         {isEditable ? <div className="no-print"><QuotationLineItemEditor quotationId={q.id} items={q.scope_lines} articles={db.master.articles}/></div> : null}
         <div className={isEditable ? "hidden print:block" : "block"}><QuotationScopeTable quotation={q}/></div>
@@ -1174,9 +1174,25 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
         if (!quotation) return [];
         return omittedOptedPairs({ workRequired, customerId: quotation.customer_id, workSubcategories, items });
     }, [quotation, workRequired, workSubcategories, items]);
+    const availableWorkTypes = React.useMemo(() => {
+        const pairKey = (subcategoryId: string | undefined, workTypeId: string | undefined) => `${subcategoryId || ""}::${workTypeId || ""}`;
+        const quoted = new Set(items.flatMap(itemOptionPairs).map((pair) => pairKey(pair.subcategory_id, pair.work_type_id)));
+        const omitted = new Set(omittedPairs.map((pair) => pairKey(pair.subcategory_id, pair.work_type_id)));
+        return workSubcategories
+            .filter(isActiveWorkTaxonomy)
+            .flatMap((subcategory) => workTypesForSubcategory(subcategory)
+                .filter(isActiveWorkTaxonomy)
+                .map((workType) => ({
+                    subcategory_id: subcategory.id,
+                    work_type_id: workType.id,
+                    key: pairKey(subcategory.id, workType.id),
+                    label: `${subcategory.name} · ${workType.name}`,
+                })))
+            .filter((pair) => !quoted.has(pair.key) && !omitted.has(pair.key));
+    }, [items, omittedPairs, workSubcategories]);
     const addOptedPair = (pair: { subcategory_id: string; work_type_id?: string }) => {
         const subcategory = workSubcategories.find((row) => row.id === pair.subcategory_id);
-        if (!subcategory) return;
+        if (!subcategory) return false;
         const workType = pair.work_type_id ? workTypesForSubcategory(subcategory).find((row) => row.id === pair.work_type_id) : undefined;
         const label = capturedPairsTitle(workSubcategories, [pair]) || subcategory.name;
         const rate = averageWorkTypeTotalRate(contractorRates, pair.subcategory_id, pair.work_type_id) ?? 0;
@@ -1193,12 +1209,15 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                 unit_id: unitId,
                 unit_name: unit?.symbol,
             });
-            toast.success(`Added "${label}" — set the rate if the master price needs a change`);
+            toast.success(`Added "${label}" — linked Work Required is updated too`);
+            return true;
         }
         catch (err) {
             toast.error(err instanceof Error ? err.message : "Could not add the work type.");
+            return false;
         }
     };
+    const [newWorkPairKey, setNewWorkPairKey] = React.useState("");
     const [adding, setAdding] = React.useState(false);
     const [newTitle, setNewTitle] = React.useState("");
     const [newQty, setNewQty] = React.useState("1");
@@ -1277,7 +1296,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
             toast.error(err instanceof Error ? err.message : "Could not add the line item.");
         }
     };
-    return (<div className="overflow-hidden rounded-lg border border-border">
+    return (<div className="overflow-visible rounded-lg border border-border">
 
       <div className="hidden gap-2 border-b border-border bg-muted/50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground sm:grid sm:grid-cols-[minmax(0,1.6fr)_5.5rem_4rem_minmax(0,1.1fr)_5.5rem_2rem]">
         <span>Item</span>
@@ -1396,13 +1415,13 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
         <span className="hidden sm:block" />
       </div>
 
-      {omittedPairs.length > 0 && (<div className="border-t border-border px-3 py-2.5">
+      {(omittedPairs.length > 0 || Boolean(quotation?.coverage.length && availableWorkTypes.length)) && (<div className="border-t border-border px-3 py-2.5">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Opted work types not in this quotation</p>
-            <span className="shrink-0 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400">{omittedPairs.length} missing</span>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Work types not in this quotation</p>
+            {omittedPairs.length > 0 && <span className="shrink-0 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400">{omittedPairs.length} previously selected</span>}
           </div>
-          <p className="mt-0.5 text-[10px] text-muted-foreground">Work types {quotation?.customer_name || "the customer"} opted for but no line prices yet — removed ones stay here (through edits and revisions) until added back.</p>
-          <div className="mt-1.5 flex flex-col gap-1">
+          <p className="mt-0.5 text-[10px] text-muted-foreground">Restore a previously selected work type, or add another one. New work is also added to the linked Work Required so customer scope, measurement and execution stay aligned.</p>
+          {omittedPairs.length > 0 && <div className="mt-1.5 flex flex-col gap-1">
             {omittedPairs.map((pair) => {
                 const label = capturedPairsTitle(workSubcategories, [pair]) || "Work type";
                 const masterRate = averageWorkTypeTotalRate(contractorRates, pair.subcategory_id, pair.work_type_id);
@@ -1416,7 +1435,19 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                   </Button>
                 </div>);
             })}
-          </div>
+          </div>}
+          {Boolean(quotation?.coverage.length && availableWorkTypes.length) && <div className="mt-2 flex flex-col gap-1.5 rounded-md border border-dashed border-border bg-muted/20 p-2 sm:flex-row sm:items-center">
+            <select value={newWorkPairKey} onChange={(event) => setNewWorkPairKey(event.target.value)} aria-label="Choose another work type" className="min-w-0 flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-xs text-foreground outline-none focus:border-primary">
+              <option value="">Choose another work type…</option>
+              {availableWorkTypes.map((pair) => <option key={pair.key} value={pair.key}>{pair.label}</option>)}
+            </select>
+            <Button type="button" size="sm" variant="outline" className="shrink-0" disabled={!newWorkPairKey} onClick={() => {
+                const selected = availableWorkTypes.find((pair) => pair.key === newWorkPairKey);
+                if (selected && addOptedPair(selected)) setNewWorkPairKey("");
+            }}>
+              <Plus className="mr-1 h-3 w-3"/> Add work type
+            </Button>
+          </div>}
         </div>)}
 
       {adding ? (<div className="grid grid-cols-[2.75rem_2.75rem_1fr_auto] items-center gap-x-2 gap-y-1 border-t border-border bg-primary/[0.03] px-3 py-2 text-xs sm:grid-cols-[1.6fr_0.6fr_0.5fr_1.1fr_0.6fr_0.3fr]">
@@ -1448,7 +1479,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                     setSuggestIdx((i) => Math.max(i - 1, 0));
                 }
             }} onFocus={() => setShowSuggest(true)} placeholder="Type to search articles…" autoFocus className="min-w-0 w-full rounded border border-border bg-card px-1.5 py-1 text-foreground outline-none focus:border-primary" role="combobox" aria-expanded={showSuggest && suggestions.length > 0} aria-controls="article-suggest-list" aria-activedescendant={suggestIdx >= 0 ? `article-suggest-${suggestIdx}` : undefined}/>
-            {showSuggest && suggestions.length > 0 && (<div id="article-suggest-list" role="listbox" className="absolute left-0 top-full z-50 mt-1 w-full max-w-72 overflow-hidden rounded-md border border-border bg-card shadow-popover animate-scale-in sm:w-72">
+            {showSuggest && suggestions.length > 0 && (<div id="article-suggest-list" role="listbox" className="absolute bottom-full left-0 z-50 mb-1 w-full max-w-72 overflow-hidden rounded-md border border-border bg-card shadow-popover animate-scale-in sm:w-72">
                 <div className="border-b border-border bg-muted/30 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Articles</div>
                 {suggestions.map((s, i) => (<button key={s.article.id} id={`article-suggest-${i}`} role="option" aria-selected={i === suggestIdx} type="button" onMouseEnter={() => setSuggestIdx(i)} onMouseDown={(e) => { e.preventDefault(); applySuggestion(s); }} className={cn("flex w-full items-center justify-between gap-2 border-b border-border px-2 py-1.5 text-left last:border-0 transition-colors", i === suggestIdx ? "bg-primary text-primary-foreground" : "hover:bg-accent")}>
                     <div className="min-w-0 flex-1">

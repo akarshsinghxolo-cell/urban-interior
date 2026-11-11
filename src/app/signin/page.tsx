@@ -169,7 +169,7 @@ export default function SignInPage() {
         if (rememberEmail) localStorage.setItem("uc_remember_email", email.trim());
         else localStorage.removeItem("uc_remember_email");
       } catch { /* non-fatal */ }
-      router.replace("/");
+      router.replace("/workspace");
       router.refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Sign-in failed.");
