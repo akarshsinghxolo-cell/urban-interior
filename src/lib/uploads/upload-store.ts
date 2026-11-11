@@ -253,6 +253,11 @@ export const uploadQueueStore = {
   async patchItem(uploadItemId: UploadItemId, patch: Partial<UploadItemRecord>): Promise<UploadItemRecord> {
     const item = snapshot.items.find((entry) => entry.id === uploadItemId) || await uploadIndexedDb.getItem(uploadItemId);
     if (!item) throw new Error("Pending upload was not found on this device.");
+    // A late transfer response may add its Drive ID, but must never undo cancellation.
+    if (["cancel_requested", "cleanup_pending", "cancelled"].includes(item.status)
+      && patch.status && !["cancel_requested", "cleanup_pending", "cancelled"].includes(patch.status)) {
+      patch = { ...patch, status: item.status };
+    }
     return persistItem({ ...item, ...patch, updatedAt: new Date().toISOString() });
   },
   async patchBatch(uploadBatchId: UploadBatchId, patch: Partial<UploadBatchRecord>): Promise<UploadBatchRecord> {
@@ -267,6 +272,8 @@ export const uploadQueueStore = {
     return snapshot.items.find((entry) => entry.id === uploadItemId);
   },
   getNextProcessableItem(): UploadItemRecord | undefined {
+    const cancellation = snapshot.items.find((item) => item.status === "cancel_requested" && itemIsProcessable(item));
+    if (cancellation) return cancellation;
     for (const batch of snapshot.batches) {
       const item = snapshot.items.find((entry) => entry.batchId === batch.id && itemIsProcessable(entry));
       if (item) return item;
@@ -369,23 +376,20 @@ export const uploadQueueStore = {
   async cancelItem(uploadItemId: UploadItemId): Promise<void> {
     const item = this.getItem(uploadItemId);
     if (!item || item.status === "completed") return;
-    if (item.deferred) {
-      await uploadIndexedDb.deleteBlob(uploadItemId).catch(() => undefined);
-      await uploadIndexedDb.deleteItem(uploadItemId).catch(() => undefined);
-      const remainingItems = snapshot.items.filter((entry) => entry.id !== uploadItemId);
-      let remainingBatches = snapshot.batches;
-      if (!remainingItems.some((entry) => entry.batchId === item.batchId)) {
-        await uploadIndexedDb.deleteBatch(item.batchId).catch(() => undefined);
-        remainingBatches = snapshot.batches.filter((batch) => batch.id !== item.batchId);
-      }
-      emit({ ...snapshot, items: remainingItems, batches: remainingBatches });
+    const mayHaveStarted = item.sessionUri || item.storageAccountId || item.googleFileId
+      || ["starting_session", "uploading", "verifying", "finalizing", "uploaded_unverified"].includes(item.status);
+    if (item.deferred || !mayHaveStarted) {
+      await this.completeItem(uploadItemId);
       return;
     }
-    await this.patchItem(uploadItemId, { status: "cancel_requested", retryAt: undefined });
+    await this.patchItem(uploadItemId, {
+      status: "cancel_requested", retryAt: undefined, retryCount: 0,
+      lastErrorCode: undefined, lastErrorMessage: undefined,
+    });
   },
   async cancelBatch(uploadBatchId: UploadBatchId): Promise<void> {
     const items = snapshot.items.filter((item) => item.batchId === uploadBatchId && item.status !== "completed");
-    for (const item of items) await this.patchItem(item.id, { status: "cancel_requested", retryAt: undefined });
+    for (const item of items) await this.cancelItem(item.id);
     const batch = this.getBatch(uploadBatchId);
     if (batch) await this.patchBatch(uploadBatchId, { status: "cancelled" });
   },

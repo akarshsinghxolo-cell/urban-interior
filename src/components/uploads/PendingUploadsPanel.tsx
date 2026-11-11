@@ -5,6 +5,7 @@ import { formatBytes } from "@/lib/rdash/format";
 import { AlertCircle, CheckCircle2, CloudOff, File, RefreshCw, Trash2, UploadCloud } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { confirmDialog } from "@/components/rdash/ConfirmDialog";
 import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
 import { uploadQueueStore } from "@/lib/uploads/upload-store";
@@ -56,7 +57,7 @@ export function PendingUploadsPanel() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 className="flex items-center gap-2 text-sm font-bold"><UploadCloud className="h-4 w-4 text-primary" /> Pending Uploads</h3>
-            <p className="mt-1 max-w-3xl text-xs text-muted-foreground">Files remain here until direct Drive transfer, real-time verification, final placement, and attachment registration are complete.</p>
+            <p className="mt-1 max-w-3xl text-xs text-muted-foreground">Uploads disappear from this list when saved. You can cancel uploads you no longer need.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-semibold", queue.online ? "bg-success/10 text-success" : "bg-warning/10 text-warning")}>{queue.online ? "Online" : "Waiting for network"}</span>
@@ -66,7 +67,7 @@ export function PendingUploadsPanel() {
                 <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}><UploadCloud className="mr-1 h-3.5 w-3.5" />Test direct upload</Button>
               </>
             ) : null}
-            <Button size="sm" variant="outline" onClick={() => void retryAll()} disabled={!pendingItems.length}><RefreshCw className="mr-1 h-3.5 w-3.5" />Retry all</Button>
+            <Button size="sm" variant="outline" onClick={() => void retryAll()} disabled={!pendingItems.some((item) => item.lastErrorCode !== "FILE_MISSING" && ["paused", "failed_permanent"].includes(item.status))}><RefreshCw className="mr-1 h-3.5 w-3.5" />Retry all</Button>
           </div>
         </div>
       </section>
@@ -77,7 +78,7 @@ export function PendingUploadsPanel() {
         <section className="rounded-xl border border-border bg-card p-8 text-center shadow-sm">
           <CheckCircle2 className="mx-auto h-8 w-8 text-success" />
           <p className="mt-2 text-sm font-semibold">No pending uploads</p>
-          <p className="mt-1 text-xs text-muted-foreground">Files selected in migrated workflows will appear here until finalization is verified.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Your uploads are up to date.</p>
         </section>
       ) : (
         <div className="grid gap-3">
@@ -94,7 +95,7 @@ export function PendingUploadsPanel() {
 function PendingUploadRow({ item, sourceLabel, targetLabel, online }: { item: UploadItemRecord; sourceLabel: string; targetLabel: string; online: boolean }) {
   const percentage = Math.min(100, Math.max(item.progress || 0, item.sizeBytes > 0 ? Math.round((item.confirmedBytes / item.sizeBytes) * 100) : 0));
   const retryable = item.status === "paused" || item.status === "failed_permanent";
-  const fileMissing = item.lastErrorCode === "FILE_MISSING";
+  const fileMissing = retryable && item.lastErrorCode === "FILE_MISSING";
   const cleanupPending = item.status === "cleanup_pending";
   const replacementInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -125,9 +126,14 @@ function PendingUploadRow({ item, sourceLabel, targetLabel, online }: { item: Up
     }
   };
   const cancelBatch = async () => {
-    if (!window.confirm("Cancel this upload batch and remove any staged Drive files?")) return;
+    if (!await confirmDialog({
+      title: "Cancel these uploads?",
+      description: "Remove unfinished uploads in this batch. Files already saved to your records will be kept.",
+      confirmLabel: "Cancel uploads", cancelLabel: "Keep uploads", danger: true,
+    })) return;
     try {
       await uploadQueueStore.cancelBatch(item.batchId);
+      toast.success("Upload cancellation saved.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "The upload batch could not be cancelled.");
     }
@@ -148,7 +154,7 @@ function PendingUploadRow({ item, sourceLabel, targetLabel, online }: { item: Up
           <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${percentage}%` }} /></div>
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
             <span>{percentage}% · {formatBytes(item.confirmedBytes)} of {formatBytes(item.sizeBytes)}</span>
-            <span>{item.retryCount ? `${item.retryCount} retr${item.retryCount === 1 ? "y" : "ies"}` : "Not retried"}</span>
+            <span>{fileMissing ? "Upload stopped" : item.status === "cancel_requested" ? "Cancelling…" : null}</span>
           </div>
           {item.lastErrorMessage ? <p className="mt-2 rounded-md bg-destructive/10 px-2 py-1.5 text-[11px] text-destructive">{item.lastErrorMessage}</p> : null}
           <div className="mt-3 flex flex-wrap gap-2">
@@ -169,7 +175,9 @@ function StatusBadge({ item, online }: { item: UploadItemRecord; online: boolean
   const failed = item.status === "failed_permanent" || item.status === "cleanup_pending";
   const waiting = networkPaused || !online;
   const Icon = failed || temporaryPaused ? AlertCircle : waiting ? CloudOff : UploadCloud;
-  const label = item.status === "failed_permanent" && item.lastErrorCode === "TARGET_NOT_READY"
+  const label = item.status === "cancel_requested" ? "Cancelling"
+    : item.status === "cleanup_pending" ? "Cancellation needs attention"
+    : item.status === "failed_permanent" && item.lastErrorCode === "TARGET_NOT_READY"
     ? "Target record required"
     : item.lastErrorCode === "FILE_MISSING"
       ? "Original file required"
