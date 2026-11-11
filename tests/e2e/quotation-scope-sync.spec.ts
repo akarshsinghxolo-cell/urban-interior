@@ -7,6 +7,7 @@ test("quotation can add new customer scope and keeps article suggestions visible
   const customerId = `cust-quote-scope-${suffix}`;
   const siteId = `site-quote-scope-${suffix}`;
   const areaId = `area-quote-scope-${suffix}`;
+  const addedAreaId = `area-quote-scope-added-${suffix}`;
   const workId = `work-quote-scope-${suffix}`;
   const quoteId = `quote-scope-${suffix}`;
   const phone = `9${Date.now().toString().slice(-9)}`;
@@ -27,7 +28,8 @@ test("quotation can add new customer scope and keeps article suggestions visible
 
   await insert("customers", { id: customerId, name: `QA Quotation Scope ${suffix}`, phone, status: "active", created_at: now, updated_at: now });
   await insert("sites", { id: siteId, customer_id: customerId, name: "QA Scope Site", site_type: "apartment", stage: "measured", created_at: now, updated_at: now });
-  await insert("areas", { id: areaId, site_id: siteId, name: "Living Room", area_type: "living_room", stage: "measured", created_at: now, updated_at: now });
+  await insert("areas", { id: areaId, site_id: siteId, name: "Living Room", area_type: "living_room", stage: "measured", floor_area: 120, created_at: now, updated_at: now });
+  await insert("areas", { id: addedAreaId, site_id: siteId, name: "Director Cabin", area_type: "office_cabin", stage: "measured", floor_area: 96, created_at: now, updated_at: now });
   await insert("workRequired", {
     id: workId,
     customer_id: customerId,
@@ -73,9 +75,31 @@ test("quotation can add new customer scope and keeps article suggestions visible
   expect((await saved).status()).toBe(200);
   await expect(page.getByRole("button", { name: `Remove work type ${addedLabel} from this line`, exact: true })).toBeVisible();
 
+  const addArea = page.getByLabel(`Add area to ${addedLabel}`, { exact: true });
+  await expect(addArea).toBeVisible();
+  const areaSaved = page.waitForResponse((response) => response.url().includes("/api/operations/commit") && response.request().method() === "POST");
+  await addArea.selectOption(addedAreaId);
+  expect((await areaSaved).status()).toBe(200);
+  const areaQuantity = page.getByLabel(`Quantity for Director Cabin in ${addedLabel}`, { exact: true });
+  await expect(areaQuantity).toHaveValue("96");
+  const quantitySaved = page.waitForResponse((response) => response.url().includes("/api/operations/commit") && response.request().method() === "POST");
+  await areaQuantity.fill("145.5");
+  await areaQuantity.blur();
+  expect((await quantitySaved).status()).toBe(200);
+
   const workRows = await (await request.get(`${base}/${COLLECTION_TO_TABLE.workRequired}?collection=eq.workRequired&id=eq.${workId}`)).json();
   expect(workRows[0].data.work_subcategory_ids).toContain(addedSubcategory.id);
   expect(workRows[0].data.work_type_ids).toContain(addedWorkType.id);
+  expect(workRows[0].data.area_ids).toContain(addedAreaId);
+  expect(workRows[0].data.structured_items).toEqual(expect.arrayContaining([
+    expect.objectContaining({ area_id: addedAreaId, work_type_id: addedWorkType.id, quantity: 145.5 }),
+  ]));
+
+  const quotationRows = await (await request.get(`${base}/${COLLECTION_TO_TABLE.quotations}?collection=eq.quotations&id=eq.${quoteId}`)).json();
+  expect(quotationRows[0].data.coverage[0].area_ids).toContain(addedAreaId);
+  expect(quotationRows[0].data.scope_lines).toEqual(expect.arrayContaining([
+    expect.objectContaining({ work_type_id: addedWorkType.id, quantity: 145.5 }),
+  ]));
 
   await page.getByRole("button", { name: "Add item", exact: true }).click();
   const articleSearch = page.getByPlaceholder("Type to search articles…", { exact: true });

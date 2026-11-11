@@ -1165,6 +1165,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
     const categories = useRDashStore((s) => s.db.master.workCategories);
     const workSubcategories = useRDashStore((s) => s.db.master.workSubcategories);
     const contractorRates = useRDashStore((s) => s.db.master.contractorRates);
+    const areas = useRDashStore((s) => s.db.areas);
     const quotation = useRDashStore((s) => s.db.quotations.find((row) => row.id === quotationId));
     const workRequired = useRDashStore((s) => s.db.workRequired);
     // The customer's opted (subcategory · work type) pairs that no line prices
@@ -1345,7 +1346,21 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                 // removable chip. The title carries no area names anymore; the
                 // quantity is the SUM of the chips and re-derives on removal.
                 const chips = it.area_chips || [];
-                if (!chips.length) return null;
+                const siteAreas = areas.filter((area) => area.site_id === quotation?.site_id && !area.is_archived);
+                const availableAreas = siteAreas.filter((area) => !chips.some((chip) => chip.area_id === area.id));
+                const unitSymbol = units.find((unit) => unit.id === it.unit_id)?.symbol || it.unit_name || "";
+                const suggestedQuantity = (areaId: string) => {
+                    const work = workRequired.find((row) => row.id === it.work_required_id);
+                    const pairs = itemOptionPairs(it);
+                    const captured = (work?.structured_items || []).find((item) => item.area_id === areaId &&
+                        itemOptionPairs(item).some((candidate) => pairs.some((pair) => candidate.subcategory_id === pair.subcategory_id && candidate.work_type_id === pair.work_type_id)));
+                    if (captured?.quantity) return captured.quantity;
+                    const area = siteAreas.find((row) => row.id === areaId);
+                    if (!area) return 1;
+                    if ((unitSymbol || "").toLowerCase().includes("rft")) return area.perimeter || 1;
+                    if ((unitSymbol || "").toLowerCase().includes("sqft")) return area.floor_area || (area.length && area.width ? Math.round(area.length * area.width * 100) / 100 : 1);
+                    return 1;
+                };
                 const removeChip = (index: number) => {
                     const rest = chips.filter((_, i) => i !== index);
                     if (!rest.length) {
@@ -1358,11 +1373,32 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                 };
                 return (<div className="col-span-4 flex min-w-0 flex-wrap items-center gap-1 sm:col-span-1 sm:col-start-4 sm:row-start-1">
                   {chips.map((chip, index) => (<span key={`${chip.area_id || chip.area_name}-${index}`} className="inline-flex max-w-full items-center gap-1 rounded border border-border bg-muted/40 py-0.5 pl-1.5 pr-0.5 text-[10px] text-muted-foreground">
-                    <span className="min-w-0 whitespace-normal break-words">{chip.area_name}{chip.quantity ? ` · ${chip.quantity} ${units.find((unit) => unit.id === it.unit_id)?.symbol || it.unit_name || ""}`.trimEnd() : ""}</span>
+                    <span className="min-w-0 whitespace-normal break-words">{chip.area_name} ·</span>
+                    <input type="number" defaultValue={chip.quantity || 0} min="0" step="0.01" aria-label={`Quantity for ${chip.area_name} in ${it.title}`} onBlur={(event) => {
+                        const quantity = Math.max(0, Number(event.currentTarget.value) || 0);
+                        if (quantity === chip.quantity) return;
+                        const next = chips.map((row, chipIndex) => chipIndex === index ? { ...row, quantity } : row);
+                        updateQuotationItem(quotationId, it.id, { area_chips: next, quantity: areaChipQuantity(next) });
+                        toast.success(`${chip.area_name} updated to ${quantity} ${unitSymbol}`.trimEnd());
+                    }} className="w-14 rounded border border-transparent bg-transparent px-0.5 text-right font-mono text-foreground outline-none hover:border-border focus:border-primary focus:bg-card"/>
+                    {unitSymbol && <span>{unitSymbol}</span>}
                     <button type="button" onClick={() => removeChip(index)} aria-label={`Remove area ${chip.area_name} from ${it.title}`} title={`Remove ${chip.area_name} — quantity drops to ${areaChipQuantity(chips.filter((_, i) => i !== index)) || 0}`} className="shrink-0 rounded-full p-0.5 text-muted-foreground/70 hover:bg-destructive/10 hover:text-destructive">
                       <X className="h-2.5 w-2.5"/>
                     </button>
                   </span>))}
+                  {availableAreas.length > 0 && <select value="" onChange={(event) => {
+                      const areaId = event.target.value;
+                      const area = siteAreas.find((row) => row.id === areaId);
+                      if (!area) return;
+                      const quantity = suggestedQuantity(area.id);
+                      const next = [...chips, { area_id: area.id, area_name: area.name, quantity }];
+                      updateQuotationItem(quotationId, it.id, { area_chips: next, quantity: areaChipQuantity(next) });
+                      toast.success(`${area.name} added — quantity ${quantity} ${unitSymbol}`.trimEnd());
+                  }} aria-label={`Add area to ${it.title}`} className="max-w-full rounded border border-dashed border-border bg-card px-1.5 py-1 text-[10px] text-muted-foreground outline-none focus:border-primary">
+                    <option value="">+ Add area…</option>
+                    {availableAreas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}
+                  </select>}
+                  {!chips.length && !availableAreas.length && <span className="text-[10px] text-muted-foreground">No Site areas available</span>}
                 </div>);
             })()}
             <div className="col-start-2 row-start-3 flex min-w-0 items-center justify-start gap-0.5 rounded border border-transparent bg-transparent px-0.5 py-0.5 font-mono hover:border-border focus-within:border-primary focus-within:bg-card sm:col-start-3 sm:row-start-1" title={it.area_chips?.length ? "Sum of the area boxes — remove an area box to reduce it" : undefined}>

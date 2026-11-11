@@ -56,7 +56,7 @@ import { cascadeDelete } from "../../integrity/cascade";
 import { advanceSitesStage } from "../../site-lifecycle";
 import { findOpenLinkedFollowup } from "../finance-helpers";
 import { acceptedScopeOverlapsCoverage, canPermanentlyDeleteQuotation, coverageAcceptedValue, quotationAcceptanceWarnings, resolveQuotationDefaults } from "../quotations-helpers";
-import { groupedQuotationScopeLines, workRequiredTitleFromSelection } from "../../work-types";
+import { areaChipQuantity, groupedQuotationScopeLines, itemOptionPairs, workRequiredTitleFromSelection } from "../../work-types";
 import { quotationLineAmount, quotationTotals } from "../../quotation-extra-columns";
 import {
     assertWorkOrderStatusTransition,
@@ -687,7 +687,8 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
             commitState({ db: nextDb });
         },
         updateQuotationItem: (quotationId, itemId, patch) => {
-            const quotation = get().db.quotations.find((row: any) => row.id === quotationId);
+            const db = get().db;
+            const quotation = db.quotations.find((row: any) => row.id === quotationId);
             if (!quotation)
                 throw new Error("Quotation not found.");
             assertQuotationEditable(quotation, "edit a quotation line");
@@ -696,28 +697,116 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                 if (item.id !== itemId)
                     return item;
                 const next = { ...item, ...patch };
-                if (patch.quantity !== undefined || patch.rate !== undefined || patch.extra_amounts !== undefined)
+                if (patch.area_chips !== undefined)
+                    next.quantity = areaChipQuantity(next.area_chips);
+                if (patch.quantity !== undefined || patch.area_chips !== undefined || patch.rate !== undefined || patch.extra_amounts !== undefined)
                     next.amount = quotationLineAmount(next);
                 return next;
             });
             if (!scopeLines.some((item: any) => item.id === itemId))
                 throw new Error("Quotation line not found.");
-            assertQuotationRelations(get().db, { ...quotation, scope_lines: scopeLines, items: scopeLines }, "Quotation");
             const totals = quotationTotals(scopeLines);
-            commitState((state: any) => ({
-                db: {
-                    ...state.db,
-                    quotations: state.db.quotations.map((row: any) => row.id === quotationId
-                        ? {
+            const changedAt = nowIso();
+            const nextItem = scopeLines.find((item: any) => item.id === itemId)!;
+            let nextWorkRequired = db.workRequired;
+            let nextCoverage = quotation.coverage;
+
+            // Area chips are not quotation-only decoration. They are the room
+            // quantities for the linked Work Required record, which is also
+            // what Customer Edit, measurement and execution read. Keep that
+            // shared record in the same atomic save whenever a chip is added
+            // or its quantity changes.
+            if (patch.area_chips !== undefined && nextItem.work_required_id) {
+                const work = db.workRequired.find((row: WorkRequired) => row.id === nextItem.work_required_id);
+                if (!work)
+                    throw new Error("The linked Work Required no longer exists.");
+                if (!quotation.site_id || work.site_id !== quotation.site_id)
+                    throw new Error("The quotation and Work Required must use the same Site.");
+
+                const chips = (nextItem.area_chips || []).filter((chip: any) => chip.area_id);
+                const areas = chips.map((chip: any) => {
+                    const area = db.areas.find((row: any) => row.id === chip.area_id && !row.is_archived);
+                    if (!area || area.site_id !== quotation.site_id)
+                        throw new Error(`Area "${chip.area_name || chip.area_id}" is not available on this Site.`);
+                    return { chip, area };
+                });
+                const nextPairs = itemOptionPairs(nextItem);
+                const pairKey = (pair: { subcategory_id?: string; work_type_id?: string }) => `${pair.subcategory_id || ""}::${pair.work_type_id || ""}`;
+                const nextPairKeys = new Set(nextPairs.map(pairKey));
+                const sameScope = (candidate: QuotationItem, areaId: string) => {
+                    const candidateKeys = itemOptionPairs(candidate).map(pairKey);
+                    return candidate.area_id === areaId && candidateKeys.length === nextPairKeys.size && candidateKeys.every((key) => nextPairKeys.has(key));
+                };
+                const structuredItems = [...(work.structured_items || [])];
+
+                for (const { chip, area } of areas) {
+                    const quantity = Math.max(0, Number(chip.quantity) || 0);
+                    const index = structuredItems.findIndex((candidate) => sameScope(candidate, area.id));
+                    const current = index >= 0 ? structuredItems[index] : undefined;
+                    const synced: QuotationItem = {
+                        ...nextItem,
+                        ...(current || {}),
+                        id: current?.id || `req-line-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+                        title: `${area.name} · ${nextItem.title}`,
+                        work_required_id: work.id,
+                        site_id: work.site_id,
+                        area_id: area.id,
+                        area_name: area.name,
+                        area_chips: undefined,
+                        category_id: nextItem.category_id,
+                        subcategory_id: nextItem.subcategory_id,
+                        work_type_id: nextItem.work_type_id,
+                        option_pairs: nextItem.option_pairs,
+                        unit_id: nextItem.unit_id,
+                        unit_name: nextItem.unit_name,
+                        quantity,
+                        rate: nextItem.rate,
+                        amount: Math.round(quantity * nextItem.rate * 100) / 100,
+                        source_kind: current?.source_kind || "quotation",
+                        source_item_id: current?.source_item_id || nextItem.id,
+                    };
+                    if (index >= 0)
+                        structuredItems[index] = synced;
+                    else
+                        structuredItems.push(synced);
+                }
+
+                const addedAreaIds = areas.map(({ area }) => area.id);
+                nextWorkRequired = db.workRequired.map((row: WorkRequired) => row.id === work.id
+                    ? (() => {
+                        const workSubcategoryIds = [...new Set([...(row.work_subcategory_ids || []), ...nextPairs.map((pair) => pair.subcategory_id).filter((id): id is string => Boolean(id))])];
+                        const workTypeIds = [...new Set([...(row.work_type_ids || []), ...nextPairs.map((pair) => pair.work_type_id).filter((id): id is string => Boolean(id))])];
+                        return {
                             ...row,
-                            scope_lines: scopeLines,
-                            items: scopeLines,
-                            ...totals,
-                            updated_at: nowIso(),
-                        }
-                        : row),
-                },
-            }));
+                            area_ids: [...new Set([...(row.area_ids || []), ...addedAreaIds])],
+                            work_subcategory_ids: workSubcategoryIds,
+                            work_type_ids: workTypeIds,
+                            title: workRequiredTitleFromSelection(db.master.workSubcategories, workSubcategoryIds, workTypeIds) || row.title,
+                            structured_items: structuredItems,
+                            updated_at: changedAt,
+                        };
+                    })()
+                    : row);
+                nextCoverage = quotation.coverage.map((coverage: any) => coverage.work_required_id === work.id
+                    ? { ...coverage, area_ids: [...new Set([...(coverage.area_ids || []), ...addedAreaIds])] }
+                    : coverage);
+            }
+
+            const nextQuotation = {
+                ...quotation,
+                coverage: nextCoverage,
+                scope_lines: scopeLines,
+                items: scopeLines,
+                ...totals,
+                updated_at: changedAt,
+            };
+            const nextDb = {
+                ...db,
+                workRequired: nextWorkRequired,
+                quotations: db.quotations.map((row: any) => row.id === quotationId ? nextQuotation : row),
+            };
+            assertQuotationRelations(nextDb, nextQuotation, "Quotation");
+            commitState({ db: nextDb });
             // Audit log for financial edits — records who changed what, when
             if (existingItem && (patch.quantity !== undefined || patch.rate !== undefined || patch.title !== undefined || patch.extra_amounts !== undefined)) {
                 const actor = get().currentUser();
