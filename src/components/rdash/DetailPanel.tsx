@@ -23,7 +23,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { areaDependencySummary } from "@/lib/rdash/business-rules";
 import { buildQuotationShareText, shareQuotationText } from "@/lib/rdash/quotation-share";
 import { canPermanentlyDeleteQuotation } from "@/lib/rdash/store/quotations-helpers";
-import { withoutQuotationExtraColumn } from "@/lib/rdash/quotation-extra-columns";
+import { quotationRateForAmount, withoutQuotationExtraColumn } from "@/lib/rdash/quotation-extra-columns";
 import { spacedQuotationTitle } from "@/lib/rdash/quotation-work-choices";
 import { confirmDialog } from "./ConfirmDialog";
 import { MapView, type MapPoint } from "./MapView";
@@ -1323,12 +1323,26 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
             toast.error(err instanceof Error ? err.message : "Could not add the line item.");
         }
     };
+    const saveLineAmount = (line: import("@/lib/rdash/types").LineItem, rawAmount: string) => {
+        const amount = Number(rawAmount);
+        if (amount === line.amount) return;
+        const rate = quotationRateForAmount(line, amount);
+        if (rate === undefined) {
+            toast.error(line.quantity > 0 ? "Amount cannot be lower than additional work." : "Enter a quantity before changing the amount.");
+            return;
+        }
+        const optionPairs = line.option_pairs?.length
+            ? line.option_pairs.map((pair, index) => index === 0 ? { ...pair, rate } : pair)
+            : undefined;
+        updateQuotationItem(quotationId, line.id, optionPairs ? { rate, option_pairs: optionPairs } : { rate });
+        toast.success(`Amount updated — rate adjusted to ${formatINR(rate)}; quantity and Areas are unchanged`);
+    };
     return (<div className="overflow-visible rounded-lg border border-border">
 
       <div className="hidden gap-2 border-b border-border bg-muted/50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground sm:grid sm:grid-cols-[minmax(0,1.6fr)_5.5rem_4rem_minmax(0,1.1fr)_5.5rem_2rem]">
         <span>Item</span>
         <span className="text-right">Rate</span>
-        <span className="text-right">Qty</span>
+        <span>Qty</span>
         <span>Areas</span>
         <span className="text-right">Amount</span>
         <span></span>
@@ -1420,7 +1434,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                 return (<div className="col-span-4 flex min-w-0 flex-wrap items-center gap-1 sm:col-span-1 sm:col-start-4 sm:row-start-1">
                   {chips.map((chip, index) => (<span key={`${chip.area_id || chip.area_name}-${index}`} className="inline-flex max-w-full items-center gap-1 rounded border border-border bg-muted/40 py-0.5 pl-1.5 pr-0.5 text-[10px] text-muted-foreground">
                     <span className="min-w-0 whitespace-normal break-words">{chip.area_name} ·</span>
-                    <input type="number" defaultValue={chip.quantity || 0} min="0" step="0.01" aria-label={`Quantity for ${chip.area_name} in ${it.title}`} onBlur={(event) => {
+                    <input key={`${it.id}-${chip.area_id || chip.area_name}-${chip.quantity}`} type="number" defaultValue={chip.quantity || ""} min="0" step="0.01" aria-label={`Quantity for ${chip.area_name} in ${it.title}`} onFocus={(event) => { if (Number(event.currentTarget.value) === 0) event.currentTarget.value = ""; }} onBlur={(event) => {
                         const quantity = Math.max(0, Number(event.currentTarget.value) || 0);
                         if (quantity === chip.quantity) return;
                         const next = chips.map((row, chipIndex) => chipIndex === index ? { ...row, quantity } : row);
@@ -1449,7 +1463,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
             })()}
             <div className="col-start-2 row-start-3 flex min-w-0 items-center justify-start gap-0.5 rounded border border-transparent bg-transparent px-0.5 py-0.5 font-mono hover:border-border focus-within:border-primary focus-within:bg-card sm:col-start-3 sm:row-start-1" title={it.area_chips?.length ? "Sum of the area boxes — remove an area box to reduce it" : undefined}>
               <span aria-hidden className="text-[10px] font-semibold text-muted-foreground">×</span>
-              {it.area_chips?.length ? (<input type="number" value={areaChipQuantity(it.area_chips)} aria-label="Quantity (sum of areas)" readOnly className="min-w-0 w-full cursor-default bg-transparent text-left outline-none"/>) : (<input type="number" defaultValue={it.quantity} aria-label="Quantity" min="0" step="0.01" onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== it.quantity)
+              {it.area_chips?.length ? (<input type="number" value={areaChipQuantity(it.area_chips) || ""} aria-label="Quantity (sum of areas)" readOnly className="min-w-0 w-full cursor-default bg-transparent text-left outline-none"/>) : (<input key={`${it.id}-${it.quantity}`} type="number" defaultValue={it.quantity || ""} aria-label="Quantity" min="0" step="0.01" onFocus={(event) => { if (Number(event.currentTarget.value) === 0) event.currentTarget.value = ""; }} onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== it.quantity)
             updateQuotationItem(quotationId, it.id, { quantity: v }); }} className="min-w-0 w-full bg-transparent text-left outline-none"/>)}
             </div>
             {(() => {
@@ -1460,7 +1474,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                 return (<div className="col-start-1 row-start-3 flex min-w-0 flex-col items-stretch gap-0.5 rounded px-1 py-0.5 font-mono sm:col-span-1 sm:col-start-2 sm:row-start-1">
                   {pairBoxes.map((box, index) => (<div key={index} className={cn("flex items-center justify-end gap-0.5 rounded border border-transparent hover:border-border focus-within:border-primary focus-within:bg-card", box.primary ? "text-foreground" : "text-muted-foreground")}>
                     <span aria-hidden className="text-[10px] font-semibold">₹</span>
-                    <input type="number" defaultValue={box.rate ?? ""} style={{ width: `${Math.max(1, String(box.rate ?? "").length)}ch` }} onInput={(event) => { event.currentTarget.style.width = `${Math.max(1, event.currentTarget.value.length)}ch`; }} placeholder="—" min="0" step="1" aria-label={`Rate for ${box.label}${box.primary ? " (drives this line)" : ""}`} onBlur={(e) => { const v = parseFloat(e.target.value); if (isNaN(v) || v === box.rate)
+                    <input key={`${it.id}-${box.rate ?? "blank"}`} type="number" defaultValue={box.rate || ""} style={{ width: `${Math.max(1, String(box.rate || "").length)}ch` }} onInput={(event) => { event.currentTarget.style.width = `${Math.max(1, event.currentTarget.value.length)}ch`; }} onFocus={(event) => { if (Number(event.currentTarget.value) === 0) event.currentTarget.value = ""; }} placeholder="—" min="0" step="1" aria-label={`Rate for ${box.label}${box.primary ? " (drives this line)" : ""}`} onBlur={(e) => { const v = parseFloat(e.target.value); if (isNaN(v) || v === box.rate)
                     return; const nextPairs = (it.option_pairs || []).map((p, pi) => pi === index ? { ...p, rate: v } : p); updateQuotationItem(quotationId, it.id, box.primary ? { option_pairs: nextPairs, rate: v } : { option_pairs: nextPairs }); }} className="min-w-0 max-w-full bg-transparent p-0 text-right outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"/>
                   </div>))}
                 </div>);
@@ -1469,15 +1483,23 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                 if (it.option_pairs?.length) return null;
                 return (<div className="col-start-1 row-start-3 flex min-w-0 items-center justify-end gap-0.5 rounded border border-transparent bg-transparent px-0.5 py-0.5 font-mono text-muted-foreground hover:border-border focus-within:border-primary focus-within:bg-card focus-within:text-foreground sm:col-start-2 sm:row-start-1">
                   <span aria-hidden className="text-[10px] font-semibold">₹</span>
-                  <input type="number" defaultValue={it.rate} style={{ width: `${Math.max(1, String(it.rate).length)}ch` }} onInput={(event) => { event.currentTarget.style.width = `${Math.max(1, event.currentTarget.value.length)}ch`; }} aria-label="Rate" min="0" step="1" onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== it.rate)
+                  <input key={`${it.id}-${it.rate}`} type="number" defaultValue={it.rate || ""} style={{ width: `${Math.max(1, String(it.rate || "").length)}ch` }} onInput={(event) => { event.currentTarget.style.width = `${Math.max(1, event.currentTarget.value.length)}ch`; }} onFocus={(event) => { if (Number(event.currentTarget.value) === 0) event.currentTarget.value = ""; }} aria-label="Rate" min="0" step="1" onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== it.rate)
                 updateQuotationItem(quotationId, it.id, { rate: v }); }} className="min-w-0 max-w-full bg-transparent p-0 text-right outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"/>
                 </div>);
             })()}
             {(() => {
                 const pairBoxes = it.option_pairs?.length ? linePairBoxes(it, workSubcategories, contractorRates) : null;
-                if (!pairBoxes) return (<span className="col-start-3 row-start-3 py-0.5 text-right font-mono font-semibold text-foreground sm:col-start-5 sm:row-start-1">{formatINR(it.amount)}</span>);
-                return (<div className="col-start-3 row-start-3 flex min-w-0 flex-col items-end gap-0.5 py-0.5 font-mono sm:col-span-1 sm:col-start-5 sm:row-start-1">
-                  {pairBoxes.map((box, index) => (<span key={index} className={cn("text-right", box.primary ? "font-semibold text-foreground" : "text-muted-foreground")} title={box.primary ? "Prices this line" : `If this option is chosen: ${box.label}`}>{box.rate === undefined ? "—" : formatINR(box.amount ?? 0)}</span>))}
+                const amountInput = <label className="flex min-w-0 items-center justify-end gap-0.5 rounded border border-transparent font-semibold text-foreground hover:border-border focus-within:border-primary focus-within:bg-card" title="Change amount; quantity and Areas stay fixed while rate is recalculated">
+                  <span aria-hidden className="text-[10px]">₹</span>
+                  <input key={`${it.id}-${it.amount}`} type="number" defaultValue={it.amount || ""} min="0" step="1" aria-label={`Amount for ${it.title}`} onFocus={(event) => { if (Number(event.currentTarget.value) === 0) event.currentTarget.value = ""; }} onBlur={(event) => {
+                      const before = event.currentTarget.value;
+                      saveLineAmount(it, before);
+                      if (quotationRateForAmount(it, Number(before)) === undefined) event.currentTarget.value = it.amount ? String(it.amount) : "";
+                  }} className="min-w-0 w-full bg-transparent p-0 text-right font-mono outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"/>
+                </label>;
+                if (!pairBoxes) return (<div className="col-start-3 row-start-3 min-w-0 py-0.5 sm:col-start-5 sm:row-start-1">{amountInput}</div>);
+                return (<div className="col-start-3 row-start-3 flex min-w-0 flex-col items-stretch gap-0.5 py-0.5 font-mono sm:col-span-1 sm:col-start-5 sm:row-start-1">
+                  {pairBoxes.map((box, index) => box.primary ? <React.Fragment key={index}>{amountInput}</React.Fragment> : <span key={index} className="text-right text-muted-foreground" title={`If this option is chosen: ${box.label}`}>{box.rate === undefined ? "—" : formatINR(box.amount ?? 0)}</span>)}
                 </div>);
             })()}
             <div className="col-start-4 row-start-3 flex items-center justify-center gap-0.5 sm:col-start-6 sm:row-start-1">

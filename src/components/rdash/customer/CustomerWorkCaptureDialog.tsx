@@ -223,21 +223,17 @@ export function CustomerWorkCaptureDialog({
   const [groups, setGroups] = React.useState<AreaGroup[]>(buildGroups);
 
   const freshLine = React.useCallback((group: AreaGroup): DraftLine => {
-    const subcategoryId = (workRequired.work_subcategory_ids || [])[0];
-    const measure = measureFor(subcategoryId);
+    const measure: WorkMeasureBasis = "floor_ceiling";
     const measured = measuredQuantity(measure, dimensions(group), 1);
     return {
       key: draftKey("work"),
-      category_id: db.master.workSubcategories.find((row) => row.id === subcategoryId)?.category_id,
-      subcategory_id: subcategoryId,
-      work_type_id: subcategoryId ? workTypesFor(subcategoryId)[0]?.id : undefined,
       target_work_required_id: workRequired.id,
       measure,
       walls: 1,
       quantity: measured.quantity > 0 ? String(round(measured.quantity)) : "",
       manualQuantity: false,
     };
-  }, [db.master.workSubcategories, measureFor, workRequired, workTypesFor]);
+  }, [workRequired.id]);
 
   const updateGroup = (key: string, patch: Partial<AreaGroup>) => setGroups((current) => current.map((group) => {
     if (group.key !== key) return group;
@@ -576,6 +572,45 @@ export function CustomerWorkCaptureDialog({
     return `${subcategory?.name || "Work"}${workType ? ` · ${workType.name}` : ""}`;
   };
 
+  const availablePlansFor = (group: AreaGroup) => {
+    const areaId = group.area_id || group.key;
+    const drafted = new Set(group.lines.flatMap((line) => pairsForLine(line).map((pair) => `${pair.subcategory_id}::${pair.work_type_id || ""}`)));
+    return seedDetailedAreaLines({
+      siteWorks: siteWorks.map((work) => ({ ...work, area_ids: [areaId] })),
+      workSubcategories: db.master.workSubcategories,
+    }).flatMap((seed) => {
+      const remaining = itemOptionPairs(seed).filter((pair) => pair.subcategory_id && !drafted.has(`${pair.subcategory_id}::${pair.work_type_id || ""}`));
+      if (!remaining.length) return [];
+      return [{
+        ...seed,
+        subcategory_id: remaining[0].subcategory_id!,
+        work_type_id: remaining[0].work_type_id,
+        option_pairs: remaining.length > 1 ? remaining.map((pair) => ({ subcategory_id: pair.subcategory_id!, work_type_id: pair.work_type_id })) : undefined,
+      }];
+    });
+  };
+
+  const addPlannedLine = (groupKey: string, seed: ReturnType<typeof seedDetailedAreaLines>[number]) => setGroups((current) => current.map((group) => {
+    if (group.key !== groupKey) return group;
+    const measured = measuredQuantity(seed.measure, dimensions(group), seed.walls);
+    return {
+      ...group,
+      open: true,
+      lines: [...group.lines, {
+        key: draftKey("scope"),
+        category_id: seed.category_id,
+        subcategory_id: seed.subcategory_id,
+        work_type_id: seed.work_type_id,
+        option_pairs: seed.option_pairs as OptionPair[] | undefined,
+        target_work_required_id: seed.work_required_id,
+        measure: seed.measure,
+        walls: seed.walls,
+        quantity: measured.quantity > 0 ? String(round(measured.quantity)) : "",
+        manualQuantity: false,
+      }],
+    };
+  }));
+
   const renderLine = (group: AreaGroup, line: DraftLine) => {
     const pairs = pairsForLine(line);
     const selectedPairSubcategoryIds = new Set(pairs.map((pair) => pair.subcategory_id));
@@ -720,6 +755,7 @@ export function CustomerWorkCaptureDialog({
 
           {groups.map((group) => {
             const savedItems = existingItems.filter((item) => item.area_id === group.area_id);
+            const availablePlans = availablePlansFor(group);
             const activeSaved = savedItems.filter((item) => !group.removedItemIds.includes(item.id));
             const issue = groupIssue(group);
             const groupEstimate = group.lines.reduce((sum, line) => sum + lineEstimate(line).amount, 0)
@@ -768,8 +804,18 @@ export function CustomerWorkCaptureDialog({
                     })}
                   </div>}
 
+                  {availablePlans.length > 0 && <div className="rounded-md border border-dashed border-primary/30 bg-primary/[0.03] p-2.5">
+                    <p className="text-[10px] font-semibold uppercase text-muted-foreground">Available customer scope · add to this Area</p>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {availablePlans.map((plan) => {
+                        const label = itemOptionPairs(plan).map((pair) => labelPair({ subcategory_id: pair.subcategory_id!, work_type_id: pair.work_type_id })).join(" / ");
+                        return <Button key={`${plan.work_required_id}:${plan.category_id}:${label}`} size="sm" variant="outline" className="h-auto min-h-7 whitespace-normal px-2 py-1 text-left text-[10px]" aria-label={`Add ${label} to ${group.area_name || "new Area"}`} onClick={() => addPlannedLine(group.key, plan)}><Plus className="mr-1 h-3 w-3 shrink-0" />{label}</Button>;
+                      })}
+                    </div>
+                  </div>}
+
                   <div className="space-y-2">{group.lines.filter((line) => !line.editOfItemId).map((line) => renderLine(group, line))}</div>
-                  {!savedItems.length && !group.lines.length && <p className="rounded-md border border-dashed border-border px-3 py-3 text-xs text-muted-foreground">No work in this Area. Add work to create the first measured item.</p>}
+                  {!savedItems.length && !group.lines.length && !availablePlans.length && <p className="rounded-md border border-dashed border-border px-3 py-3 text-xs text-muted-foreground">No customer scope remains for this Area. Use Add work for a new work type.</p>}
                   {issue && <p className="text-[11px] text-destructive">{issue}</p>}
                 </div>}
               </section>
@@ -783,11 +829,11 @@ export function CustomerWorkCaptureDialog({
           <span className="min-w-0 text-[11px] text-muted-foreground">
             {canSave
               ? `${validEntries.length} valid work item(s)${estimateTotal ? ` · ≈ ${formatINR(estimateTotal)}` : ""}${areaDims.length ? ` · ${areaDims.length} Area dimension update(s)` : ""}${removedItemIds.length + removedSelections.length ? ` · ${removedItemIds.length + removedSelections.length} removal(s)` : ""}${skippedLines ? ` · ${skippedLines} incomplete/duplicate row(s) left untouched` : ""}`
-              : "All current work is already saved, or no complete change is ready."}
+              : skippedLines ? "Complete the highlighted work item, or remove it if it is not needed." : "No unsaved changes."}
           </span>
           <div className="flex gap-2">
             <Button size="sm" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button size="sm" disabled={!canSave} onClick={save}>{validEntries.length ? `Capture ${validEntries.length} work item(s)` : areaDims.length ? "Save Area dimensions" : "Apply removals"}<CheckCircle2 className="ml-1.5 h-3.5 w-3.5" /></Button>
+            <Button size="sm" disabled={!canSave} onClick={save}>{validEntries.length ? `Capture ${validEntries.length} work item(s)` : areaDims.length ? "Save Area dimensions" : removedItemIds.length + removedSelections.length ? "Apply removals" : "Nothing to save"}<CheckCircle2 className="ml-1.5 h-3.5 w-3.5" /></Button>
           </div>
         </div>
       </div>

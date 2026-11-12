@@ -12,6 +12,16 @@ export function quotationLineAmount(line: Pick<LineItem, "quantity" | "rate" | "
   return money((line.quantity || 0) * (line.rate || 0) + quotationExtraAmount(line));
 }
 
+export function quotationRateForAmount(
+  line: Pick<LineItem, "quantity" | "extra_amounts">,
+  amount: number,
+): number | undefined {
+  const quantity = Number(line.quantity) || 0;
+  const extras = quotationExtraAmount(line);
+  if (!Number.isFinite(amount) || quantity <= 0 || amount < extras) return undefined;
+  return money((amount - extras) / quantity);
+}
+
 export function quotationTotals(lines: readonly LineItem[]) {
   const subtotal = money(lines.reduce((sum, line) => sum + line.amount, 0));
   const tax_amount = money(lines.reduce((sum, line) => sum + (line.amount * (line.tax_rate || 0)) / 100, 0));

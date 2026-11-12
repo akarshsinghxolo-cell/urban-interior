@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   quotationExtraAmount,
   quotationLineAmount,
+  quotationRateForAmount,
   quotationTotals,
   withoutQuotationExtraColumn,
 } from "../src/lib/rdash/quotation-extra-columns";
@@ -42,6 +43,14 @@ describe("quotation additional work columns", () => {
 
   test("ignores invalid or negative custom amounts", () => {
     expect(quotationExtraAmount(line({ extra_amounts: { valid: 50, negative: -5, invalid: Number.NaN } }))).toBe(50);
+  });
+
+  test("editing a line amount keeps quantity fixed and derives the rate", () => {
+    const item = line({ quantity: 350, rate: 340, amount: 119_000, extra_amounts: { civil: 1_000 } });
+
+    expect(quotationRateForAmount(item, 106_000)).toBe(300);
+    expect(item.quantity).toBe(350);
+    expect(quotationRateForAmount(item, 500)).toBeUndefined();
   });
 
   test("operational repair preserves additional work in line, quotation and tax totals", () => {

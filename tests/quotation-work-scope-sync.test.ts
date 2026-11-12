@@ -106,6 +106,14 @@ describe("quotation work scope synchronization", () => {
         work = state.db.workRequired.find((row: any) => row.id === "work-das-office-ceiling");
         expect(work.structured_items.find((item: any) => item.area_id === "area-das-cabin" && item.work_type_id === "wt-fc_gyp-standard").quantity).toBe(145.5);
         expect(state.db.quotations.find((row: any) => row.id === quotation.id).scope_lines.find((item: any) => item.id === line.id).quantity).toBe(145.5);
+
+        slice.updateQuotationItem(quotation.id, line.id, { rate: 300 });
+        work = state.db.workRequired.find((row: any) => row.id === "work-das-office-ceiling");
+        expect(work.structured_items.find((item: any) => item.area_id === "area-das-cabin" && item.work_type_id === "wt-fc_gyp-standard")).toMatchObject({
+            quantity: 145.5,
+            rate: 300,
+            amount: 43_650,
+        });
     });
 
     test("adding work to a room-wise quotation updates the shared customer scope and measurement line", () => {

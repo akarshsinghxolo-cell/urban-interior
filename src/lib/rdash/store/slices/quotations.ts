@@ -802,7 +802,11 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
             let nextWorkRequired = db.workRequired;
             let nextCoverage = quotation.coverage;
 
-            if (patch.area_chips !== undefined) {
+            if (nextItem.area_chips !== undefined && (
+                patch.area_chips !== undefined
+                || patch.rate !== undefined
+                || patch.option_pairs !== undefined
+            )) {
                 const synced = syncQuotationLineScope(db, quotation, nextItem, changedAt);
                 nextWorkRequired = synced.workRequired;
                 nextCoverage = synced.coverage;

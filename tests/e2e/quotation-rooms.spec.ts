@@ -39,9 +39,12 @@ test("individual types from one combined requirement control rooms and prices in
   // without orphaning a verified measurement retained in the workspace.
   await insert("measurementRevisions", [bedroom].map((areaId) => ({ id: `measurement-${combinedWork.id}-${areaId}`, site_id: siteId, work_required_id: combinedWork.id, area_id: areaId, revision_no: 1, status: "verified", captured_at: now, captured_by: "QA" })));
 
-  const openCustomerQuotations = async () => {
+  const openCustomer = async () => {
     await page.goto("/workspace/customers");
     await page.getByRole("button", { name: new RegExp(`QA Room Quote ${suffix}`, "i") }).click();
+  };
+  const openCustomerQuotations = async () => {
+    await openCustomer();
     await page.getByRole("button", { name: /^Quotations \(/ }).click();
   };
   await openCustomerQuotations();
@@ -157,12 +160,28 @@ test("individual types from one combined requirement control rooms and prices in
   await page.getByRole("button", { name: "Add work type to Bedroom", exact: true }).click();
   expect((await saved).status()).toBe(200);
   await expect(page.getByRole("button", { name: "Remove work type Interior Emulsion Paint · Standard from this line", exact: true })).toBeVisible();
+  const paintAmount = page.getByLabel("Amount for Interior Emulsion Paint · Standard", { exact: true });
+  saved = page.waitForResponse((response) => response.url().includes("/api/operations/commit") && response.request().method() === "POST");
+  await paintAmount.fill("500");
+  await paintAmount.blur();
+  expect((await saved).status()).toBe(200);
+  const paintQuantity = page.getByLabel("Quantity for Bedroom in Interior Emulsion Paint · Standard", { exact: true });
+  await expect(paintQuantity).toHaveValue("1");
+
   const syncedWorkRows = await (await request.get(`${base}/${COLLECTION_TO_TABLE.workRequired}?collection=eq.workRequired&id=eq.${works[0].id}`)).json();
   expect(syncedWorkRows[0].data.work_subcategory_ids).toContain("pw_int");
   expect(syncedWorkRows[0].data.work_type_ids).toContain("wt-pw_int-standard");
   expect(syncedWorkRows[0].data.structured_items).toEqual(expect.arrayContaining([
-    expect.objectContaining({ area_id: bedroom, subcategory_id: "pw_int", work_type_id: "wt-pw_int-standard", quantity: 1 }),
+    expect.objectContaining({ area_id: bedroom, subcategory_id: "pw_int", work_type_id: "wt-pw_int-standard", quantity: 1, rate: 500, amount: 500 }),
   ]));
+
+  saved = page.waitForResponse((response) => response.url().includes("/api/operations/commit") && response.request().method() === "POST");
+  await paintQuantity.fill("0");
+  await paintQuantity.blur();
+  expect((await saved).status()).toBe(200);
+  await expect(page.getByLabel("Quantity for Bedroom in Interior Emulsion Paint · Standard", { exact: true })).toHaveValue("");
+  const paintRow = page.getByRole("button", { name: "Remove work type Interior Emulsion Paint · Standard from this line", exact: true }).locator("xpath=ancestor::div[contains(@class,'group')]");
+  await expect(paintRow.getByLabel("Quantity (sum of areas)", { exact: true })).toHaveValue("");
 
   // Disabled quoted checkboxes must stay in the submitted data as well as the UI.
   await openCustomerQuotations();
@@ -180,6 +199,34 @@ test("individual types from one combined requirement control rooms and prices in
   await expect(customerForm).toHaveCount(0);
   const workRows = await (await request.get(`${base}/${COLLECTION_TO_TABLE.workRequired}?collection=eq.workRequired&id=eq.${works[0].id}`)).json();
   expect(workRows[0].data.area_ids).toEqual([bedroom]);
+
+  const wallpaper = masters.find((row: any) => /wallpaper/i.test(row.data.name)).data;
+  const wallpaperType = wallpaper.work_types[0];
+  await insert("workRequired", [{
+    id: `work-wallpaper-${suffix}`,
+    customer_id: customerId,
+    site_id: siteId,
+    title: `${wallpaper.name} · ${wallpaperType.name}`,
+    area_ids: [living],
+    work_subcategory_ids: [wallpaper.id],
+    work_type_ids: [wallpaperType.id],
+    structured_items: [],
+    status: "measurement_done",
+    priority: "medium",
+    created_at: now,
+    updated_at: now,
+  }]);
+  await openCustomer();
+  const customerPanel = page.getByRole("dialog", { name: "Record context panel", exact: true });
+  await customerPanel.getByRole("button", { name: /^Sites \(/ }).click();
+  await customerPanel.getByRole("button", { name: "Capture detailed area", exact: true }).first().click();
+  const capture = page.getByRole("dialog", { name: "Capture detailed area", exact: true });
+  const wallpaperLabel = `${wallpaper.name} · ${wallpaperType.name}`;
+  await expect(capture.getByRole("button", { name: `Add ${wallpaperLabel} to Bedroom`, exact: true })).toBeVisible();
+  await capture.getByRole("button", { name: "Add work", exact: true }).first().click();
+  await expect(capture.getByText("Complete the highlighted work item, or remove it if it is not needed.", { exact: true })).toBeVisible();
+  await expect(capture.getByRole("button", { name: "Nothing to save", exact: true })).toBeDisabled();
+  await capture.getByRole("button", { name: "Cancel", exact: true }).click();
 
   await openCustomerQuotations();
   await page.getByRole("button", { name: new RegExp(roomQuote.quotation_no) }).click();
