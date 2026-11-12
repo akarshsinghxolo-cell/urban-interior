@@ -6,8 +6,10 @@ import type { RDashDatabase } from "../src/lib/rdash/types";
 import { normalizeCustomerRow, titleCaseCustomerName } from "../src/lib/rdash/customer-record";
 import {
   confirmedPhotoAttachmentIds,
+  areaPayload,
   customerPayload,
   defaultSiteName,
+  draftForArea,
   draftForWorkRequired,
   newSiteDraft,
   siteNameFollowsCustomer,
@@ -91,6 +93,37 @@ describe("customer Site form defaults", () => {
       ["attachment-1", "attachment-1", "attachment-2"],
       ["attachment-1"],
     )).toEqual(["attachment-2"]);
+  });
+
+  test("round-trips Area dimensions through the customer form", () => {
+    const draft = draftForArea({
+      id: "area-1",
+      site_id: "site-1",
+      name: "Bedroom",
+      area_type: "bedroom",
+      stage: "unmeasured",
+      length: 15,
+      width: 12.5,
+      height: 10,
+      unit: "ft",
+      created_at: "",
+      updated_at: "",
+    });
+
+    expect(draft).toMatchObject({ length: "15", breadth: "12.5", height: "10" });
+    const payload = areaPayload({ ...draft, length: "16", breadth: "13", height: "" }, "Owner");
+    expect(payload).toMatchObject({
+      length: 16,
+      width: 13,
+      height: undefined,
+      unit: "ft",
+    });
+    const result = applyCustomerWithSitesSave(database(), {
+      customerId: "customer-1",
+      customer: { name: "Existing Customer" },
+      areas: [payload],
+    }, options);
+    expect(result.db.areas.find((area) => area.id === "area-1")).toMatchObject({ length: 16, width: 13, unit: "ft" });
   });
 
   test("automatic Site names follow customer renames until manually changed", () => {

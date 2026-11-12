@@ -10,6 +10,7 @@ import type { Area, Priority, RDashDatabase, Site } from "@/lib/rdash/types";
 import { isActiveWorkTaxonomy, pruneWorkTypeIds, subcategoriesWithSelectedWorkTypes, withPrimaryWorkTypeIds, workRequiredTitleFromSelection, workTypesForSubcategory } from "@/lib/rdash/work-types";
 import { useRDashStore } from "@/lib/rdash/store";
 import { AREA_TYPES } from "./customer-sites-form-model";
+import { CustomerAreaDimensionsFields, type CustomerAreaDimensionsDraft } from "./customer/CustomerAreaDimensionsFields";
 import { AddWorkCategoryAction, AddWorkSubcategoryAction, AddWorkTypeAction } from "./WorkTaxonomyQuickAdd";
 import { MultiTickDropdown } from "./MultiTickDropdown";
 
@@ -29,6 +30,17 @@ type NewWorkArea = {
   areaType: Area["area_type"];
   notes: string;
 };
+
+type WorkRequiredArea = Pick<Area, "id" | "name"> & {
+  area_type?: Area["area_type"];
+  areaType?: Area["area_type"];
+  length?: string | number;
+  width?: string | number;
+  breadth?: string | number;
+  height?: string | number;
+};
+
+type WorkRequiredAreaPatch = Partial<CustomerAreaDimensionsDraft> & { name?: string };
 
 export function emptyWorkRequiredFormDraft(): WorkRequiredFormDraft {
   return {
@@ -57,13 +69,13 @@ export function WorkRequiredFields({
 }: {
   db: RDashDatabase;
   site?: Pick<Site, "id" | "name">;
-  areas: Array<Pick<Area, "id" | "name"> & { area_type?: Area["area_type"]; areaType?: Area["area_type"] }>;
+  areas: WorkRequiredArea[];
   value: WorkRequiredFormDraft;
   /** Areas already committed by an active quotation for this work selection. */
   lockedAreaIds?: string[];
   onChange: (patch: Partial<WorkRequiredFormDraft>) => void;
   onCreateArea: (area: NewWorkArea) => string;
-  onUpdateArea?: (areaId: string, name: string) => void;
+  onUpdateArea?: (areaId: string, patch: WorkRequiredAreaPatch) => void;
   onDeleteArea?: (areaId: string) => void;
   onAddNext?: (mode: "areas" | "copy") => void;
 }) {
@@ -234,19 +246,32 @@ export function WorkRequiredFields({
         ) : null}
         {lockedAreaIds.length ? <p className="mt-1 flex items-center gap-1 text-[10px] text-emerald-700 dark:text-emerald-300"><LockKeyhole className="h-3 w-3" />Quoted Areas stay selected here because quotations and customer work use the same coverage.</p> : null}
         {areas.length ? (
-          <div className="mt-1 grid max-h-44 grid-cols-1 gap-1.5 overflow-y-auto rounded-md border border-border p-2 sm:grid-cols-2">
+          <div className="mt-1 grid max-h-72 grid-cols-1 gap-2 overflow-y-auto rounded-md border border-border p-2">
             {areas.map((area) => (
-              <div key={area.id} className="flex items-center gap-1 rounded px-1 py-1 text-xs hover:bg-accent/50">
-                <input
-                  type="checkbox"
-                  aria-label={`Include Area ${area.name}`}
-                  checked={effectiveAreaIds.has(area.id)}
-                  disabled={lockedAreas.has(area.id)}
-                  title={lockedAreas.has(area.id) ? "Included in an active quotation" : undefined}
-                  onChange={() => onChange({ areaIds: value.areaIds.includes(area.id) ? value.areaIds.filter((id) => id !== area.id) : [...value.areaIds, area.id] })}
-                />
-                <Input id={`area-name-${area.id}`} value={area.name} onChange={(event) => onUpdateArea?.(area.id, event.target.value)} readOnly={!onUpdateArea} className="h-7 min-w-0 text-xs" aria-label={`Area name ${area.name}`} />
-                {onDeleteArea ? <Button type="button" size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-destructive" onClick={() => onDeleteArea(area.id)} aria-label={`Delete Area ${area.name}`}><Trash2 className="h-3.5 w-3.5" /></Button> : null}
+              <div key={area.id} role="group" aria-label={`Area ${area.name}`} className="rounded border border-border/70 px-2 py-2 text-xs">
+                <div className="flex items-center gap-1">
+                  <input
+                    type="checkbox"
+                    aria-label={`Include Area ${area.name}`}
+                    checked={effectiveAreaIds.has(area.id)}
+                    disabled={lockedAreas.has(area.id)}
+                    title={lockedAreas.has(area.id) ? "Included in an active quotation" : undefined}
+                    onChange={() => onChange({ areaIds: value.areaIds.includes(area.id) ? value.areaIds.filter((id) => id !== area.id) : [...value.areaIds, area.id] })}
+                  />
+                  <Input id={`area-name-${area.id}`} value={area.name} onChange={(event) => onUpdateArea?.(area.id, { name: event.target.value })} readOnly={!onUpdateArea} className="h-7 min-w-0 text-xs" aria-label={`Area name ${area.name}`} />
+                  {onDeleteArea ? <Button type="button" size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-destructive" onClick={() => onDeleteArea(area.id)} aria-label={`Delete Area ${area.name}`}><Trash2 className="h-3.5 w-3.5" /></Button> : null}
+                </div>
+                {effectiveAreaIds.has(area.id) && onUpdateArea ? <div className="mt-2 rounded-md bg-muted/30 p-2">
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase text-muted-foreground">Area dimensions · single customer source</p>
+                  <CustomerAreaDimensionsFields
+                    value={{
+                      length: area.length ? String(area.length) : "",
+                      breadth: area.breadth ? String(area.breadth) : area.width ? String(area.width) : "",
+                      height: area.height ? String(area.height) : "",
+                    }}
+                    onChange={(dimensions) => onUpdateArea?.(area.id, dimensions)}
+                  />
+                </div> : null}
               </div>
             ))}
           </div>

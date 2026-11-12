@@ -194,7 +194,7 @@ export function CustomerWorkRequiredDraftSection({
                 setAreas((current) => [...current, area]);
                 return area.id;
               }}
-              onUpdateArea={(areaId, name) => setAreas((current) => current.map((area) => area.id === areaId ? { ...area, name } : area))}
+              onUpdateArea={(areaId, patch) => setAreas((current) => current.map((area) => area.id === areaId ? { ...area, ...patch } : area))}
               onDeleteArea={(areaId) => {
                 setAreas((current) => current.flatMap((area) => area.id !== areaId ? [area] : area.existing ? [{ ...area, archiveRequested: true }] : []));
                 setWorkRequired((current) => current.map((work) => ({ ...work, areaIds: work.areaIds.filter((id) => id !== areaId) })));
