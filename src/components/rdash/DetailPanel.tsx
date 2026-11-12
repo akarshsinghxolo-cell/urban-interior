@@ -1175,10 +1175,8 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
         if (!quotation) return [];
         return omittedOptedPairs({ workRequired, customerId: quotation.customer_id, workSubcategories, items });
     }, [quotation, workRequired, workSubcategories, items]);
-    const availableWorkTypes = React.useMemo(() => {
+    const activeWorkTypes = React.useMemo(() => {
         const pairKey = (subcategoryId: string | undefined, workTypeId: string | undefined) => `${subcategoryId || ""}::${workTypeId || ""}`;
-        const quoted = new Set(items.flatMap(itemOptionPairs).map((pair) => pairKey(pair.subcategory_id, pair.work_type_id)));
-        const omitted = new Set(omittedPairs.map((pair) => pairKey(pair.subcategory_id, pair.work_type_id)));
         return workSubcategories
             .filter(isActiveWorkTaxonomy)
             .flatMap((subcategory) => workTypesForSubcategory(subcategory)
@@ -1188,29 +1186,56 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                     work_type_id: workType.id,
                     key: pairKey(subcategory.id, workType.id),
                     label: `${subcategory.name} · ${workType.name}`,
-                })))
-            .filter((pair) => !quoted.has(pair.key) && !omitted.has(pair.key));
-    }, [items, omittedPairs, workSubcategories]);
-    const addOptedPair = (pair: { subcategory_id: string; work_type_id?: string }) => {
+                })));
+    }, [workSubcategories]);
+    const availableWorkTypes = React.useMemo(() => {
+        const pairKey = (subcategoryId: string | undefined, workTypeId: string | undefined) => `${subcategoryId || ""}::${workTypeId || ""}`;
+        const quoted = new Set(items.flatMap(itemOptionPairs).map((pair) => pairKey(pair.subcategory_id, pair.work_type_id)));
+        const omitted = new Set(omittedPairs.map((pair) => pairKey(pair.subcategory_id, pair.work_type_id)));
+        return activeWorkTypes.filter((pair) => !quoted.has(pair.key) && !omitted.has(pair.key));
+    }, [activeWorkTypes, items, omittedPairs]);
+    const availableWorkTypesForArea = (areaId: string) => {
+        const quoted = new Set(items
+            .filter((line) => (line.area_id || line.area_chips?.[0]?.area_id) === areaId)
+            .flatMap(itemOptionPairs)
+            .map((pair) => `${pair.subcategory_id || ""}::${pair.work_type_id || ""}`));
+        return activeWorkTypes.filter((pair) => !quoted.has(pair.key));
+    };
+    const addOptedPair = (pair: { subcategory_id: string; work_type_id?: string }, area?: (typeof areas)[number]) => {
         const subcategory = workSubcategories.find((row) => row.id === pair.subcategory_id);
-        if (!subcategory) return false;
+        if (!subcategory || !quotation) return false;
         const workType = pair.work_type_id ? workTypesForSubcategory(subcategory).find((row) => row.id === pair.work_type_id) : undefined;
         const label = capturedPairsTitle(workSubcategories, [pair]) || subcategory.name;
         const rate = averageWorkTypeTotalRate(contractorRates, pair.subcategory_id, pair.work_type_id) ?? 0;
         const unitId = workType?.unit_id || subcategory.unit_id;
         const unit = unitId ? units.find((row) => row.id === unitId) : undefined;
+        const captured = area ? workRequired
+            .filter((work) => work.site_id === quotation.site_id)
+            .flatMap((work) => work.structured_items || [])
+            .find((item) => item.area_id === area.id && itemOptionPairs(item).some((candidate) => candidate.subcategory_id === pair.subcategory_id && candidate.work_type_id === pair.work_type_id)) : undefined;
+        const unitSymbol = unit?.symbol || "";
+        const quantity = captured?.quantity ?? (area
+            ? unitSymbol.toLowerCase().includes("rft")
+                ? area.perimeter || 1
+                : unitSymbol.toLowerCase().includes("sqft")
+                    ? area.floor_area || (area.length && area.width ? Math.round(area.length * area.width * 100) / 100 : 1)
+                    : 1
+            : 1);
         try {
             addQuotationItem(quotationId, {
                 title: label,
                 category_id: subcategory.category_id,
                 subcategory_id: subcategory.id,
                 work_type_id: workType?.id,
-                quantity: 1,
+                quantity,
                 rate,
                 unit_id: unitId,
                 unit_name: unit?.symbol,
+                area_id: area?.id,
+                area_name: area?.name,
+                area_chips: area ? [{ area_id: area.id, area_name: area.name, quantity }] : undefined,
             });
-            toast.success(`Added "${label}" — linked Work Required is updated too`);
+            toast.success(`Added "${label}"${area ? ` to ${area.name}` : ""} — linked Work Required is updated too`);
             return true;
         }
         catch (err) {
@@ -1219,6 +1244,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
         }
     };
     const [newWorkPairKey, setNewWorkPairKey] = React.useState("");
+    const [areaWorkPairKeys, setAreaWorkPairKeys] = React.useState<Record<string, string>>({});
     const [adding, setAdding] = React.useState(false);
     const [newTitle, setNewTitle] = React.useState("");
     const [newQty, setNewQty] = React.useState("1");
@@ -1311,7 +1337,27 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
       {items.length === 0 ? (<div className="px-3 py-6 text-center text-xs text-muted-foreground">
           No line items yet. Click "Add item" to build the quotation.
         </div>) : (items.map((it, itemIndex) => (<React.Fragment key={it.id}>
-          {quotation?.grouping === "area" && (itemIndex === 0 || items[itemIndex - 1].area_id !== it.area_id) && <h3 className="border-b border-border bg-muted/50 px-3 py-2 text-sm font-semibold">{it.area_chips?.[0]?.area_name || it.area_name || "No room assigned"}</h3>}
+          {quotation?.grouping === "area" && (itemIndex === 0 || (items[itemIndex - 1].area_id || items[itemIndex - 1].area_chips?.[0]?.area_id) !== (it.area_id || it.area_chips?.[0]?.area_id)) && (() => {
+              const areaId = it.area_id || it.area_chips?.[0]?.area_id;
+              const area = areas.find((row) => row.id === areaId && !row.is_archived);
+              const choices = areaId ? availableWorkTypesForArea(areaId) : [];
+              const selectedKey = areaId ? areaWorkPairKeys[areaId] || "" : "";
+              return <div className="flex flex-col gap-2 border-b border-border bg-muted/50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                <h3 className="text-sm font-semibold">{it.area_chips?.[0]?.area_name || it.area_name || "No room assigned"}</h3>
+                {area && choices.length > 0 && <div className="flex min-w-0 items-center gap-1.5">
+                  <select value={selectedKey} onChange={(event) => setAreaWorkPairKeys((current) => ({ ...current, [area.id]: event.target.value }))} aria-label={`Choose work type for ${area.name}`} className="min-w-0 flex-1 rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground outline-none focus:border-primary">
+                    <option value="">Add work type…</option>
+                    {choices.map((pair) => <option key={pair.key} value={pair.key}>{pair.label}</option>)}
+                  </select>
+                  <Button type="button" size="sm" variant="outline" className="shrink-0" disabled={!selectedKey} aria-label={`Add work type to ${area.name}`} onClick={() => {
+                      const selected = choices.find((pair) => pair.key === selectedKey);
+                      if (selected && addOptedPair(selected, area)) setAreaWorkPairKeys((current) => ({ ...current, [area.id]: "" }));
+                  }}>
+                    <Plus className="mr-1 h-3 w-3"/> Add
+                  </Button>
+                </div>}
+              </div>;
+          })()}
           <div className="group grid grid-cols-[5.5rem_4rem_minmax(0,1fr)_auto] items-center gap-x-1 gap-y-1 border-b border-border px-3 py-1.5 text-xs last:border-0 hover:bg-accent/20 sm:grid-cols-[minmax(0,1.6fr)_5.5rem_4rem_minmax(0,1.1fr)_5.5rem_2rem]">
             {(() => {
                 // Use saved catalogue IDs, never an old combined display title, to identify priced work.
@@ -1386,7 +1432,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                       <X className="h-2.5 w-2.5"/>
                     </button>
                   </span>))}
-                  {availableAreas.length > 0 && <select value="" onChange={(event) => {
+                  {quotation?.grouping !== "area" && availableAreas.length > 0 && <select value="" onChange={(event) => {
                       const areaId = event.target.value;
                       const area = siteAreas.find((row) => row.id === areaId);
                       if (!area) return;
@@ -1398,7 +1444,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                     <option value="">+ Add area…</option>
                     {availableAreas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}
                   </select>}
-                  {!chips.length && !availableAreas.length && <span className="text-[10px] text-muted-foreground">No Site areas available</span>}
+                  {quotation?.grouping !== "area" && !chips.length && !availableAreas.length && <span className="text-[10px] text-muted-foreground">No Site areas available</span>}
                 </div>);
             })()}
             <div className="col-start-2 row-start-3 flex min-w-0 items-center justify-start gap-0.5 rounded border border-transparent bg-transparent px-0.5 py-0.5 font-mono hover:border-border focus-within:border-primary focus-within:bg-card sm:col-start-3 sm:row-start-1" title={it.area_chips?.length ? "Sum of the area boxes — remove an area box to reduce it" : undefined}>

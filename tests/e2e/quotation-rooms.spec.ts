@@ -76,8 +76,8 @@ test("individual types from one combined requirement control rooms and prices in
   expect(persisted[0].scope_lines.map((line: any) => line.work_type_id).sort()).toEqual(combinedWork.work_type_ids.sort());
   expect(persisted[0].scope_lines.every((line: any) => !line.option_pairs?.length)).toBe(true);
   expect(persisted[0].scope_lines.every((line: any) => line.area_chips.length === 1 && line.area_chips[0].area_id === bedroom)).toBe(true);
-  await expect(page.getByText("Bedroom · 1 sqft", { exact: true })).toBeVisible();
-  await expect(page.getByText("Bedroom · 10 sqft", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Quantity for Bedroom in TV Unit · Standard", { exact: true })).toHaveValue("1");
+  await expect(page.getByLabel("Quantity for Bedroom in Gypsum False Ceiling · Standard", { exact: true })).toHaveValue("10");
   const removeTv = page.getByRole("button", { name: "Remove work type TV Unit · Standard from this line", exact: true });
   await expect(removeTv).toBeVisible();
   await expect(page.getByRole("button", { name: "Remove work type Gypsum False Ceiling · Standard from this line", exact: true })).toBeVisible();
@@ -149,6 +149,21 @@ test("individual types from one combined requirement control rooms and prices in
   await page.getByRole("button", { name: new RegExp(roomQuote.quotation_no) }).click();
   await expect(page.getByRole("heading", { name: "Bedroom", exact: true })).toBeVisible();
 
+  // Area-wise editing adds work to the room (it must not offer another area
+  // on every line) and persists the same scope into Work Required.
+  await expect(page.getByLabel("Add area to TV Unit · Standard", { exact: true })).toHaveCount(0);
+  await page.getByLabel("Choose work type for Bedroom", { exact: true }).selectOption({ label: "Interior Emulsion Paint · Standard" });
+  saved = page.waitForResponse((response) => response.url().includes("/api/operations/commit") && response.request().method() === "POST");
+  await page.getByRole("button", { name: "Add work type to Bedroom", exact: true }).click();
+  expect((await saved).status()).toBe(200);
+  await expect(page.getByRole("button", { name: "Remove work type Interior Emulsion Paint · Standard from this line", exact: true })).toBeVisible();
+  const syncedWorkRows = await (await request.get(`${base}/${COLLECTION_TO_TABLE.workRequired}?collection=eq.workRequired&id=eq.${works[0].id}`)).json();
+  expect(syncedWorkRows[0].data.work_subcategory_ids).toContain("pw_int");
+  expect(syncedWorkRows[0].data.work_type_ids).toContain("wt-pw_int-standard");
+  expect(syncedWorkRows[0].data.structured_items).toEqual(expect.arrayContaining([
+    expect.objectContaining({ area_id: bedroom, subcategory_id: "pw_int", work_type_id: "wt-pw_int-standard", quantity: 1 }),
+  ]));
+
   // Disabled quoted checkboxes must stay in the submitted data as well as the UI.
   await openCustomerQuotations();
   await page.getByRole("button", { name: "Edit customer", exact: true }).click();
@@ -175,6 +190,7 @@ test("individual types from one combined requirement control rooms and prices in
   await expect(page.getByRole("button", { name: "Remove work type TV Unit · Standard from this line", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Remove work type Gypsum False Ceiling · Standard from this line", exact: true })).toBeVisible();
   const afterRemoval = (await quotes()).find((quote: any) => quote.id === roomQuote.id);
-  expect(afterRemoval.scope_lines).toHaveLength(1);
+  expect(afterRemoval.scope_lines).toHaveLength(2);
+  expect(afterRemoval.scope_lines.map((line: any) => line.work_type_id).sort()).toEqual(["wt-fc_gyp-standard", "wt-pw_int-standard"]);
   expect(afterRemoval.subtotal).toBe(1000);
 });

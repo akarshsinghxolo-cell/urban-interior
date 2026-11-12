@@ -120,6 +120,84 @@ function upsertQuotationFollowup(state: any, quotation: Quotation) {
     return state.addFollowup({ ...patch, notes_history: [] });
 }
 
+function syncQuotationLineScope(db: any, quotation: Quotation, line: QuotationItem, changedAt: string) {
+    if (line.area_chips === undefined || !line.work_required_id)
+        return { workRequired: db.workRequired, coverage: quotation.coverage };
+    const work = db.workRequired.find((row: WorkRequired) => row.id === line.work_required_id);
+    if (!work)
+        throw new Error("The linked Work Required no longer exists.");
+    if (!quotation.site_id || work.site_id !== quotation.site_id)
+        throw new Error("The quotation and Work Required must use the same Site.");
+
+    const chips = line.area_chips.filter((chip) => chip.area_id);
+    const areas = chips.map((chip) => {
+        const area = db.areas.find((row: any) => row.id === chip.area_id && !row.is_archived);
+        if (!area || area.site_id !== quotation.site_id)
+            throw new Error(`Area "${chip.area_name || chip.area_id}" is not available on this Site.`);
+        return { chip, area };
+    });
+    const nextPairs = itemOptionPairs(line);
+    const pairKey = (pair: { subcategory_id?: string; work_type_id?: string }) => `${pair.subcategory_id || ""}::${pair.work_type_id || ""}`;
+    const nextPairKeys = new Set(nextPairs.map(pairKey));
+    const sameScope = (candidate: QuotationItem, areaId: string) => {
+        const candidateKeys = itemOptionPairs(candidate).map(pairKey);
+        return candidate.area_id === areaId && candidateKeys.length === nextPairKeys.size && candidateKeys.every((key) => nextPairKeys.has(key));
+    };
+    const structuredItems = [...(work.structured_items || [])];
+
+    for (const { chip, area } of areas) {
+        const quantity = Math.max(0, Number(chip.quantity) || 0);
+        const index = structuredItems.findIndex((candidate) => sameScope(candidate, area.id));
+        const current = index >= 0 ? structuredItems[index] : undefined;
+        const synced: QuotationItem = {
+            ...line,
+            ...(current || {}),
+            id: current?.id || `req-line-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+            title: `${area.name} · ${line.title}`,
+            work_required_id: work.id,
+            site_id: work.site_id,
+            area_id: area.id,
+            area_name: area.name,
+            area_chips: undefined,
+            category_id: line.category_id,
+            subcategory_id: line.subcategory_id,
+            work_type_id: line.work_type_id,
+            option_pairs: line.option_pairs,
+            unit_id: line.unit_id,
+            unit_name: line.unit_name,
+            quantity,
+            rate: line.rate,
+            amount: Math.round(quantity * line.rate * 100) / 100,
+            source_kind: current?.source_kind || "quotation",
+            source_item_id: current?.source_item_id || line.id,
+        };
+        if (index >= 0)
+            structuredItems[index] = synced;
+        else
+            structuredItems.push(synced);
+    }
+
+    const addedAreaIds = areas.map(({ area }) => area.id);
+    const workSubcategoryIds = [...new Set([...(work.work_subcategory_ids || []), ...nextPairs.map((pair) => pair.subcategory_id).filter((id): id is string => Boolean(id))])];
+    const workTypeIds = [...new Set([...(work.work_type_ids || []), ...nextPairs.map((pair) => pair.work_type_id).filter((id): id is string => Boolean(id))])];
+    return {
+        workRequired: db.workRequired.map((row: WorkRequired) => row.id === work.id
+            ? {
+                ...row,
+                area_ids: [...new Set([...(row.area_ids || []), ...addedAreaIds])],
+                work_subcategory_ids: workSubcategoryIds,
+                work_type_ids: workTypeIds,
+                title: workRequiredTitleFromSelection(db.master.workSubcategories, workSubcategoryIds, workTypeIds) || row.title,
+                structured_items: structuredItems,
+                updated_at: changedAt,
+            }
+            : row),
+        coverage: quotation.coverage.map((entry) => entry.work_required_id === work.id
+            ? { ...entry, area_ids: [...new Set([...(entry.area_ids || []), ...addedAreaIds])] }
+            : entry),
+    };
+}
+
 export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
     const { commitState, get } = ctx;
 
@@ -635,11 +713,13 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                 // pair renders/prices like any captured single-pair line.
                 subcategory_id: item.subcategory_id,
                 work_type_id: item.work_type_id,
+                option_pairs: item.option_pairs,
                 work_required_id: targetWork?.id || item.work_required_id,
                 site_id: item.site_id || quotation.site_id,
                 area_id: item.area_id,
                 site_name: item.site_name,
                 area_name: item.area_name,
+                area_chips: item.area_chips,
                 drawing_id: item.drawing_id,
                 quantity,
                 unit_id: item.unit_id,
@@ -652,11 +732,15 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                 source_kind: "quotation",
                 source_item_id: item.source_item_id,
             };
-            const scopeLines = [...quotation.scope_lines, newItem];
             newItem.amount = quotationLineAmount(newItem);
+            const scopeLines = [...quotation.scope_lines];
+            const matchingAreaIndex = quotation.grouping === "area" && newItem.area_id
+                ? scopeLines.reduce((last, line, index) => (line.area_id || line.area_chips?.[0]?.area_id) === newItem.area_id ? index : last, -1)
+                : -1;
+            scopeLines.splice(matchingAreaIndex >= 0 ? matchingAreaIndex + 1 : scopeLines.length, 0, newItem);
             const totals = quotationTotals(scopeLines);
             const changedAt = nowIso();
-            const nextWorkRequired = targetWork && addedPair
+            let nextWorkRequired = targetWork && addedPair
                 ? db.workRequired.map((work: WorkRequired) => {
                     if (work.id !== targetWork.id)
                         return work;
@@ -671,8 +755,15 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                     };
                 })
                 : db.workRequired;
+            let nextCoverage = quotation.coverage;
+            if (newItem.area_chips !== undefined) {
+                const synced = syncQuotationLineScope({ ...db, workRequired: nextWorkRequired }, quotation, newItem, changedAt);
+                nextWorkRequired = synced.workRequired;
+                nextCoverage = synced.coverage;
+            }
             const nextQuotation = {
                 ...quotation,
+                coverage: nextCoverage,
                 scope_lines: scopeLines,
                 items: scopeLines,
                 ...totals,
@@ -711,85 +802,10 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
             let nextWorkRequired = db.workRequired;
             let nextCoverage = quotation.coverage;
 
-            // Area chips are not quotation-only decoration. They are the room
-            // quantities for the linked Work Required record, which is also
-            // what Customer Edit, measurement and execution read. Keep that
-            // shared record in the same atomic save whenever a chip is added
-            // or its quantity changes.
-            if (patch.area_chips !== undefined && nextItem.work_required_id) {
-                const work = db.workRequired.find((row: WorkRequired) => row.id === nextItem.work_required_id);
-                if (!work)
-                    throw new Error("The linked Work Required no longer exists.");
-                if (!quotation.site_id || work.site_id !== quotation.site_id)
-                    throw new Error("The quotation and Work Required must use the same Site.");
-
-                const chips = (nextItem.area_chips || []).filter((chip: any) => chip.area_id);
-                const areas = chips.map((chip: any) => {
-                    const area = db.areas.find((row: any) => row.id === chip.area_id && !row.is_archived);
-                    if (!area || area.site_id !== quotation.site_id)
-                        throw new Error(`Area "${chip.area_name || chip.area_id}" is not available on this Site.`);
-                    return { chip, area };
-                });
-                const nextPairs = itemOptionPairs(nextItem);
-                const pairKey = (pair: { subcategory_id?: string; work_type_id?: string }) => `${pair.subcategory_id || ""}::${pair.work_type_id || ""}`;
-                const nextPairKeys = new Set(nextPairs.map(pairKey));
-                const sameScope = (candidate: QuotationItem, areaId: string) => {
-                    const candidateKeys = itemOptionPairs(candidate).map(pairKey);
-                    return candidate.area_id === areaId && candidateKeys.length === nextPairKeys.size && candidateKeys.every((key) => nextPairKeys.has(key));
-                };
-                const structuredItems = [...(work.structured_items || [])];
-
-                for (const { chip, area } of areas) {
-                    const quantity = Math.max(0, Number(chip.quantity) || 0);
-                    const index = structuredItems.findIndex((candidate) => sameScope(candidate, area.id));
-                    const current = index >= 0 ? structuredItems[index] : undefined;
-                    const synced: QuotationItem = {
-                        ...nextItem,
-                        ...(current || {}),
-                        id: current?.id || `req-line-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
-                        title: `${area.name} · ${nextItem.title}`,
-                        work_required_id: work.id,
-                        site_id: work.site_id,
-                        area_id: area.id,
-                        area_name: area.name,
-                        area_chips: undefined,
-                        category_id: nextItem.category_id,
-                        subcategory_id: nextItem.subcategory_id,
-                        work_type_id: nextItem.work_type_id,
-                        option_pairs: nextItem.option_pairs,
-                        unit_id: nextItem.unit_id,
-                        unit_name: nextItem.unit_name,
-                        quantity,
-                        rate: nextItem.rate,
-                        amount: Math.round(quantity * nextItem.rate * 100) / 100,
-                        source_kind: current?.source_kind || "quotation",
-                        source_item_id: current?.source_item_id || nextItem.id,
-                    };
-                    if (index >= 0)
-                        structuredItems[index] = synced;
-                    else
-                        structuredItems.push(synced);
-                }
-
-                const addedAreaIds = areas.map(({ area }) => area.id);
-                nextWorkRequired = db.workRequired.map((row: WorkRequired) => row.id === work.id
-                    ? (() => {
-                        const workSubcategoryIds = [...new Set([...(row.work_subcategory_ids || []), ...nextPairs.map((pair) => pair.subcategory_id).filter((id): id is string => Boolean(id))])];
-                        const workTypeIds = [...new Set([...(row.work_type_ids || []), ...nextPairs.map((pair) => pair.work_type_id).filter((id): id is string => Boolean(id))])];
-                        return {
-                            ...row,
-                            area_ids: [...new Set([...(row.area_ids || []), ...addedAreaIds])],
-                            work_subcategory_ids: workSubcategoryIds,
-                            work_type_ids: workTypeIds,
-                            title: workRequiredTitleFromSelection(db.master.workSubcategories, workSubcategoryIds, workTypeIds) || row.title,
-                            structured_items: structuredItems,
-                            updated_at: changedAt,
-                        };
-                    })()
-                    : row);
-                nextCoverage = quotation.coverage.map((coverage: any) => coverage.work_required_id === work.id
-                    ? { ...coverage, area_ids: [...new Set([...(coverage.area_ids || []), ...addedAreaIds])] }
-                    : coverage);
+            if (patch.area_chips !== undefined) {
+                const synced = syncQuotationLineScope(db, quotation, nextItem, changedAt);
+                nextWorkRequired = synced.workRequired;
+                nextCoverage = synced.coverage;
             }
 
             const nextQuotation = {

@@ -107,4 +107,53 @@ describe("quotation work scope synchronization", () => {
         expect(work.structured_items.find((item: any) => item.area_id === "area-das-cabin" && item.work_type_id === "wt-fc_gyp-standard").quantity).toBe(145.5);
         expect(state.db.quotations.find((row: any) => row.id === quotation.id).scope_lines.find((item: any) => item.id === line.id).quantity).toBe(145.5);
     });
+
+    test("adding work to a room-wise quotation updates the shared customer scope and measurement line", () => {
+        const { state, slice } = quotationHarness();
+        const quotation = state.db.quotations.find((row: any) => row.id === "quote-das-office");
+        const subcategory = state.db.master.workSubcategories.find((row: any) => row.id === "pw_int");
+        quotation.grouping = "area";
+
+        slice.addQuotationItem(quotation.id, {
+            title: "Interior Emulsion Paint · Standard",
+            category_id: subcategory.category_id,
+            subcategory_id: subcategory.id,
+            work_type_id: "wt-pw_int-standard",
+            area_id: "area-das-reception",
+            area_name: "Reception",
+            area_chips: [{ area_id: "area-das-reception", area_name: "Reception", quantity: 252 }],
+            quantity: 252,
+            rate: 31.5,
+            unit_id: "sqft",
+            unit_name: "sqft",
+        });
+
+        const savedQuotation = state.db.quotations.find((row: any) => row.id === quotation.id);
+        const added = savedQuotation.scope_lines.find((line: any) => line.work_type_id === "wt-pw_int-standard");
+        expect(added).toMatchObject({
+            area_id: "area-das-reception",
+            quantity: 252,
+            area_chips: [{ area_id: "area-das-reception", area_name: "Reception", quantity: 252 }],
+        });
+
+        const work = state.db.workRequired.find((row: any) => row.id === "work-das-office-ceiling");
+        expect(work.work_subcategory_ids).toContain("pw_int");
+        expect(work.work_type_ids).toContain("wt-pw_int-standard");
+        expect(work.area_ids).toContain("area-das-reception");
+        expect(work.structured_items).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                area_id: "area-das-reception",
+                subcategory_id: "pw_int",
+                work_type_id: "wt-pw_int-standard",
+                quantity: 252,
+            }),
+        ]));
+
+        const customerEditDraft = draftForWorkRequired(work, state.db.master);
+        expect(customerEditDraft.subcategoryIds).toContain("pw_int");
+        expect(customerEditDraft.workTypeIds).toContain("wt-pw_int-standard");
+        expect(customerEditDraft.areaIds).toContain("area-das-reception");
+        const measurementSeeds = seedDetailedAreaLines({ siteWorks: [work], workSubcategories: state.db.master.workSubcategories });
+        expect(measurementSeeds.some((seed) => seed.area_id === "area-das-reception" && seed.work_type_id === "wt-pw_int-standard")).toBe(false);
+    });
 });
