@@ -160,7 +160,7 @@ describe("Google Drive transaction simplification", () => {
   test("keeps external Drive references on their original URL", async () => {
     const attachments = await readFile("src/lib/rdash/file-attachments.ts", "utf8");
     expectTokens(attachments, ['asset.storage_provider === "google_drive" && asset.storage_mode === "managed"']);
-    expectTokens(attachments, ["googleFileId: managedDriveFile ? asset.google_file_id : undefined"]);
+    expectTokens(attachments, ["googleFileId: managedDriveFile ? googleFileId : undefined", "googleFileIdFromUrl"]);
     expectTokens(attachments, ["url: asset.web_view_link"]);
   });
 

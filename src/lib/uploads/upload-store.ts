@@ -362,6 +362,18 @@ export const uploadQueueStore = {
     const retryable = snapshot.items.filter((item) => !item.deferred && item.lastErrorCode !== "FILE_MISSING" && (item.status === "paused" || item.status === "failed_permanent"));
     for (const item of retryable) await this.retryItem(item.id);
   },
+  async removeMissingFileUploads(): Promise<number> {
+    await this.hydrate();
+    const unrecoverable = snapshot.items.filter((item) =>
+      !item.deferred
+      && item.status === "failed_permanent"
+      && item.lastErrorCode === "FILE_MISSING"
+      && !item.googleFileId
+      && !item.sessionUri,
+    );
+    for (const item of unrecoverable) await this.completeItem(item.id);
+    return unrecoverable.length;
+  },
   async reselectFile(uploadItemId: UploadItemId, file: File): Promise<void> {
     const item = this.getItem(uploadItemId);
     if (!item || item.lastErrorCode !== "FILE_MISSING") throw new Error("This upload is not waiting for a replacement file.");

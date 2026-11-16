@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { FilePreview } from "./FilePreview";
 import { useRDashStore } from "@/lib/rdash/store";
-import { entityFiles, assetPreview } from "@/lib/rdash/file-attachments";
+import { entityFiles, assetPreview, customerMediaItems } from "@/lib/rdash/file-attachments";
 import { MANAGED_FILE_ACCEPT } from "@/lib/rdash/file-assets";
 import type { FileAttachmentEntityType, FileAttachmentRole } from "@/lib/rdash/types";
 import { classifyWorkflowFile, enqueueWorkflowFiles } from "@/lib/uploads/workflow-upload";
@@ -25,6 +25,7 @@ export function EntityFilesCard({
   onDetach,
   registerBatch,
   allowDetach = true,
+  includeCustomerMedia = false,
 }: {
   entityType: FileAttachmentEntityType;
   entityId: string;
@@ -36,12 +37,17 @@ export function EntityFilesCard({
   onDetach?: (attachmentId: string) => void;
   registerBatch?: (batchId: UploadBatchId) => void;
   allowDetach?: boolean;
+  includeCustomerMedia?: boolean;
 }) {
   const db = useRDashStore((state) => state.db);
   const detachEntityFileAttachment = useRDashStore((state) => state.detachEntityFileAttachment);
   const [queueing, setQueueing] = React.useState(false);
   const hidden = React.useMemo(() => new Set(hiddenAttachmentIds), [hiddenAttachmentIds]);
-  const files = entityFiles(db, entityType, entityId).filter(({ attachment, asset }) => asset.status === "active" && !hidden.has(attachment.id));
+  const files = includeCustomerMedia && entityType === "customer"
+    ? customerMediaItems(db, entityId).filter(({ attachment }) => !attachment || !hidden.has(attachment.id))
+    : entityFiles(db, entityType, entityId)
+        .filter(({ attachment, asset }) => asset.status === "active" && !hidden.has(attachment.id))
+        .map(({ attachment, asset }) => ({ attachment, asset, section: title, sourceLabel: attachment.entity_label || title }));
 
   if (!manage && !showEmpty && files.length === 0) return null;
 
@@ -96,14 +102,14 @@ export function EntityFilesCard({
 
       {files.length ? (
         <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
-          {files.map(({ attachment, asset }) => (
-            <div key={attachment.id} className="min-w-0 rounded-md border border-border bg-background p-1.5">
+          {files.map(({ attachment, asset, section, sourceLabel }) => (
+            <div key={attachment?.id || asset.id} className="min-w-0 rounded-md border border-border bg-background p-1.5">
               <FilePreview file={assetPreview(asset)} compact controls />
               <div className="mt-1 flex items-center gap-1">
-                <p className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground" title={attachment.caption || attachment.role}>
-                  {attachment.caption || attachment.role.replaceAll("_", " ")}
+                <p className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground" title={attachment?.caption || sourceLabel}>
+                  {attachment?.caption || (includeCustomerMedia ? section : attachment?.role.replaceAll("_", " ")) || sourceLabel}
                 </p>
-                {manage && allowDetach ? (
+                {manage && allowDetach && attachment?.entity_type === entityType && attachment.entity_id === entityId ? (
                   <Button
                     type="button"
                     size="icon"

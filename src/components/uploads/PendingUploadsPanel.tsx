@@ -17,6 +17,7 @@ export function PendingUploadsPanel() {
   const role = useRDashStore((state) => state.authUser?.role || "Unauthenticated");
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const pendingItems = queue.items.filter((item) => !item.deferred && item.status !== "completed" && item.status !== "cancelled");
+  const missingFileItems = pendingItems.filter((item) => item.status === "failed_permanent" && item.lastErrorCode === "FILE_MISSING" && !item.googleFileId && !item.sessionUri);
   const batchMap = new Map(queue.batches.map((batch) => [batch.id, batch]));
 
   const queueDiagnosticUpload = async (files: FileList | null) => {
@@ -51,6 +52,22 @@ export function PendingUploadsPanel() {
     }
   };
 
+  const removeMissingFileUploads = async () => {
+    if (!await confirmDialog({
+      title: `Remove ${missingFileItems.length} failed upload${missingFileItems.length === 1 ? "" : "s"}?`,
+      description: "Only uploads whose original file is no longer available will be removed. Active and retryable uploads will stay in the queue.",
+      confirmLabel: "Remove failed uploads",
+      cancelLabel: "Keep uploads",
+      danger: true,
+    })) return;
+    try {
+      const removed = await uploadQueueStore.removeMissingFileUploads();
+      toast.success(`${removed} failed upload${removed === 1 ? "" : "s"} removed.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed uploads could not be removed.");
+    }
+  };
+
   return (
     <div className="grid gap-4">
       <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
@@ -67,6 +84,7 @@ export function PendingUploadsPanel() {
                 <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}><UploadCloud className="mr-1 h-3.5 w-3.5" />Test direct upload</Button>
               </>
             ) : null}
+            <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={() => void removeMissingFileUploads()} disabled={!missingFileItems.length}><Trash2 className="mr-1 h-3.5 w-3.5" />Remove failed{missingFileItems.length ? ` (${missingFileItems.length})` : ""}</Button>
             <Button size="sm" variant="outline" onClick={() => void retryAll()} disabled={!pendingItems.some((item) => item.lastErrorCode !== "FILE_MISSING" && ["paused", "failed_permanent"].includes(item.status))}><RefreshCw className="mr-1 h-3.5 w-3.5" />Retry all</Button>
           </div>
         </div>
@@ -113,6 +131,7 @@ function PendingUploadRow({ item, sourceLabel, targetLabel, online }: { item: Up
       toast.error(error instanceof Error ? error.message : "Drive cleanup could not be retried.");
     }
   };
+
   const reselect = async (files: FileList | null) => {
     const file = files?.[0];
     if (!file) return;

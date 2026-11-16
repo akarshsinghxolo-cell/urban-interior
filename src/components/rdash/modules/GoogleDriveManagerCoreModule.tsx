@@ -6,7 +6,8 @@ import type { FileAsset, StorageAccount } from "@/lib/rdash/types";
 import { accountIsAtSwitchThreshold, selectWriteStorageAccount } from "@/lib/rdash/storage";
 import { FilePreview } from "../FilePreview";
 import { DriveSecurityDiagnosticsPanel } from "./DriveSecurityDiagnosticsPanel";
-import { assetPreview } from "@/lib/rdash/file-attachments";
+import { assetPreview, fileCustomerNames, googleFileIdFromUrl } from "@/lib/rdash/file-attachments";
+import { formatDate } from "@/lib/rdash/format";
 import { cn } from "@/lib/utils";
 import {
   Archive,
@@ -51,8 +52,9 @@ const isHttpUrl = (v?: string) => /^https:\/\//.test(v || "");
 
 function authorizedOpenUrl(file?: FileAsset) {
   if (!file) return "";
-  if (file.storage_mode === "managed" && file.google_file_id) {
-    return `/api/google-drive/open?fileId=${encodeURIComponent(file.google_file_id)}`;
+  const googleFileId = file.google_file_id || googleFileIdFromUrl(file.web_view_link);
+  if (file.storage_mode === "managed" && googleFileId) {
+    return `/api/google-drive/open?fileId=${encodeURIComponent(googleFileId)}`;
   }
   return file.web_view_link || "";
 }
@@ -73,6 +75,7 @@ export function GoogleDriveManagerModule() {
   const accounts = db.master.storageAccounts || [];
   const credentialIds = new Set((config?.connections || []).map((connection) => connection.id));
   const files = React.useMemo(() => (db.master.fileAssets || []).filter((file: FileAsset) => file.status === "active"), [db.master.fileAssets]);
+  const customerNamesByFileId = React.useMemo(() => new Map(files.map((file) => [file.id, fileCustomerNames(db, file)])), [db, files]);
   const activeFileCountByAccount = React.useMemo(() => {
     const counts: Record<string, number> = {};
     for (const file of files) {
@@ -313,12 +316,13 @@ export function GoogleDriveManagerModule() {
             <section className="min-w-0 rounded-xl border border-border bg-card shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3"><div className="min-w-0"><h3 className="text-sm font-bold">All Files</h3><p className="text-[11px] text-muted-foreground">Business links point to the exact original file; files are not copied when reused elsewhere.</p></div><span className="text-xs text-muted-foreground">{files.length} active</span></div>
               <div className="max-h-96 divide-y divide-border overflow-y-auto">
-                {files.map((item) => { const parent = accounts.find((a) => a.id === item.storage_account_id); const links = (db.entityFileAttachments || []).filter((l: any) => l.file_asset_id === item.id); const openUrl = authorizedOpenUrl(item); return (
+                {files.map((item) => { const parent = accounts.find((a) => a.id === item.storage_account_id); const links = (db.entityFileAttachments || []).filter((link) => link.file_asset_id === item.id); const openUrl = authorizedOpenUrl(item); const customerNames = customerNamesByFileId.get(item.id) || []; return (
                   <div key={item.id} className="flex items-start gap-3 px-4 py-3">
                     <FilePreview file={assetPreview(item)} compact controls={false} className="mt-0.5 w-20 shrink-0" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{item.file_name}</p>
                       <p className="truncate text-[10px] text-muted-foreground">{item.kind.replaceAll("_", " ")} · {parent?.label || "External Drive file"}</p>
+                      <p className="mt-0.5 truncate text-[10px] text-muted-foreground">Uploaded {formatDate(item.created_at)} · {customerNames.length ? `Customer: ${customerNames.join(", ")}` : "No customer linked"}</p>
                       <div className="mt-1 flex flex-wrap items-center gap-2">
                         {openUrl ? <Button size="sm" variant="outline" className="h-7 px-2 text-[10px]" onClick={() => window.open(openUrl, "_blank", "noopener,noreferrer")}>Open in Google Drive</Button> : null}
                         <button onClick={() => openDetail("media" as any, item.id)} className="rounded border border-border px-2 py-0.5 text-[10px] font-semibold text-primary hover:bg-primary/10">View Usage</button>

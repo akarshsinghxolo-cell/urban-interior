@@ -297,7 +297,7 @@ export function CustomerSitesDialog({
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overflow-x-hidden px-5 py-4 rd-scroll">
             <CustomerDetailsFields db={db} customer={customer} setCustomer={setCustomer} isEdit={isEdit} customerId={editId} duplicateMatches={duplicateMatches} sameNameMatches={sameNameMatches} sameNameAcknowledged={sameNameAcknowledged} setSameNameAcknowledged={setSameNameAcknowledged} openExistingCustomer={openExistingCustomer} />
-            {isEdit && editId ? <EntityFilesCard entityType="customer" entityId={editId} title="Customer documents" manage showEmpty hiddenAttachmentIds={detachAttachmentIds} registerBatch={registerBatch} onDetach={(attachmentId) => setDetachAttachmentIds((current) => [...new Set([...current, attachmentId])])} /> : null}
+            {isEdit && editId ? <EntityFilesCard entityType="customer" entityId={editId} title="Customer documents" manage showEmpty includeCustomerMedia hiddenAttachmentIds={detachAttachmentIds} registerBatch={registerBatch} onDetach={(attachmentId) => setDetachAttachmentIds((current) => [...new Set([...current, attachmentId])])} /> : null}
             <section className="space-y-3 border-t border-border pt-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2"><Building2 className="h-4 w-4 text-primary" /><div><h3 className="text-sm font-semibold">Sites</h3><p className="text-[11px] text-muted-foreground">Sites are optional. New Sites default to “{defaultSiteName(defaultCustomerName) || "Customer Name Site"}”.</p></div></div>

@@ -100,6 +100,20 @@ test("missing files stop at hydration and Retry all cannot revive them", async (
   expect(store.getNextProcessableItem()).toBeUndefined();
 });
 
+test("bulk removal deletes only unrecoverable missing-file uploads", async () => {
+  seed("missing-one");
+  seed("missing-two", { batchId: "batch-two" as UploadItemRecord["batchId"] });
+  disk.batches.set("batch-two", { id: "batch-two", status: "open", createdAt: "2026-11-02" } as UploadBatchRecord);
+  const retryable = seed("network", { batchId: "batch-network" as UploadItemRecord["batchId"], status: "paused", lastErrorCode: "NETWORK" });
+  disk.batches.set("batch-network", { id: "batch-network", status: "waiting", createdAt: "2026-11-03" } as UploadBatchRecord);
+  disk.blobs.set(retryable.id, new Blob(["file"]));
+
+  const store = await restore();
+  await expect(store.removeMissingFileUploads()).resolves.toBe(2);
+  expect(store.getSnapshot().items.map((item) => item.id)).toEqual(["network"]);
+  expect(store.getSnapshot().batches.map((batch) => batch.id)).toEqual(["batch-network"]);
+});
+
 test("a cancellation can finish even if an old job has lost its batch record", async () => {
   const item = seed("orphan", { sessionUri: "https://example.test/session" });
   disk.batches.clear();

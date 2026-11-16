@@ -51,6 +51,7 @@ import { CustomerWorkCaptureDialog } from "../customer/CustomerWorkCaptureDialog
 import { EntityFilesCard } from "../EntityFilesCard";
 import { RecordPaymentDialog } from "../ActionDialogs";
 import { CustomerSalesProgress } from "../customer/CustomerSalesProgress";
+import { CustomerMediaGallery } from "../customer/CustomerMediaGallery";
 
 /**
  * Customer 360° portfolio.
@@ -281,6 +282,7 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
                 {!sites.length && <EmptyState title="No sites" description="Add the first Customer Site to define Areas and Work Required." />}
               </div>
             </section>
+            <CustomerMediaGallery customerId={customerId} />
           </div>
         )}
 
