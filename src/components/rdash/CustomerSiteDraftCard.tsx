@@ -94,7 +94,7 @@ export function CustomerSiteDraftCard({
     const current = draftRef.current;
     const patch: Partial<SiteDraft> = {};
     const city = addressCity(data?.address);
-    const locality = addressLocality(data?.address);
+    const locality = addressLocality(data?.address, data?.display_name);
     if (data?.display_name && (!preserveEnteredAddress || !current.address.trim())) patch.address = data.display_name;
     if (!preserveEnteredAddress || !current.city.trim()) patch.city = city;
     if (!preserveEnteredAddress || !current.locality.trim()) patch.locality = locality;

@@ -60,7 +60,7 @@ export function usePartnerLocation<T extends LocationDraft>(open: boolean, editI
           ...draft,
           address: draft.address.trim() ? draft.address : result.display_name || draft.address,
           city: draft.city.trim() ? draft.city : addressCity(result.address) || draft.city,
-          locality: draft.locality.trim() ? draft.locality : addressLocality(result.address) || draft.locality,
+          locality: draft.locality.trim() ? draft.locality : addressLocality(result.address, result.display_name) || draft.locality,
         } : draft);
       } catch (error) {
         if (current()) toast.error(error instanceof Error && error.message ? error.message : "Address autofill failed. Coordinates were kept.");
