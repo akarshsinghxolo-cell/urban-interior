@@ -8,15 +8,18 @@ import type { UploadBatchId } from "./upload-types";
 export function useUploadDraft(active: boolean) {
   const batchesRef = React.useRef(new Set<UploadBatchId>());
   const previouslyActiveRef = React.useRef(active);
+  const [pendingBatchCount, setPendingBatchCount] = React.useState(0);
 
   const registerBatch = React.useCallback((batchId: UploadBatchId) => {
     batchesRef.current.add(batchId);
+    setPendingBatchCount(batchesRef.current.size);
     return batchId;
   }, []);
 
   const commitBatches = React.useCallback(() => {
     const batches = [...batchesRef.current];
     batchesRef.current.clear();
+    setPendingBatchCount(0);
     for (const batchId of batches) {
       void uploadQueueStore.releaseDeferredBatch(batchId).catch((error) =>
         console.error("[UploadDraft] Could not release saved uploads", error),
@@ -27,6 +30,7 @@ export function useUploadDraft(active: boolean) {
   const cancelBatches = React.useCallback(async () => {
     const batches = [...batchesRef.current];
     batchesRef.current.clear();
+    setPendingBatchCount(0);
     for (const batchId of batches) await uploadQueueStore.discardDeferredBatch(batchId);
   }, []);
 
@@ -43,5 +47,5 @@ export function useUploadDraft(active: boolean) {
     }
   }, [cancelBatches]);
 
-  return { registerBatch, commitBatches, cancelBatches };
+  return { registerBatch, commitBatches, cancelBatches, hasPendingBatches: pendingBatchCount > 0 };
 }

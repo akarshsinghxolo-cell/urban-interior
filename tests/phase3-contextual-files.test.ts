@@ -102,6 +102,7 @@ describe("Phase 3 re-audit", () => {
   test("Save/Cancel editors stage direct-file changes while Customer portfolio stays read-only for direct files", async () => {
     const card = await read("src/components/rdash/EntityFilesCard.tsx");
     const customerEditor = await read("src/components/rdash/CustomerSitesDialog.tsx");
+    const uploadDraft = await read("src/lib/uploads/use-upload-draft.ts");
     const customerPortfolio = await read("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
     expect(card).toContain("hiddenAttachmentIds");
     expect(card).toContain("registerBatch?.(queued.batchId)");
@@ -109,6 +110,8 @@ describe("Phase 3 re-audit", () => {
     expect(card).toContain("allowDetach");
     expect(customerEditor).toContain("hiddenAttachmentIds={detachAttachmentIds}");
     expect(customerEditor).toContain("registerBatch={registerBatch}");
+    expectTokens(customerEditor, ["currentFingerprint !== baseline || hasPendingBatches"]);
+    expectTokens(uploadDraft, ["hasPendingBatches: pendingBatchCount > 0"]);
     expectTokens(customerEditor, ["onDetach={(attachmentId) => setDetachAttachmentIds"]);
     expect(customerPortfolio).not.toContain("useUploadDraft(true)");
     expect(customerPortfolio).not.toContain("registerBatch={registerBatch}");

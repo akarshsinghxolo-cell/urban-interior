@@ -87,7 +87,7 @@ export function CustomerSitesDialog({
   const [baseline, setBaseline] = React.useState("");
   const [sameNameAcknowledged, setSameNameAcknowledged] = React.useState(false);
   const defaultCustomerName = titleCaseCustomerName(customer.name);
-  const { registerBatch, commitBatches } = useUploadDraft(open);
+  const { registerBatch, commitBatches, hasPendingBatches } = useUploadDraft(open);
   const formId = `customer-sites:${editId || "new"}`;
   const initializedKeyRef = React.useRef<string | null>(null);
   const previousCustomerNameRef = React.useRef("");
@@ -155,7 +155,7 @@ export function CustomerSitesDialog({
     () => fingerprint(customer, sites, detachAttachmentIds, sameNameAcknowledged, areas, workRequired),
     [areas, customer, sites, detachAttachmentIds, sameNameAcknowledged, workRequired],
   );
-  const dirty = open && currentFingerprint !== baseline;
+  const dirty = open && (currentFingerprint !== baseline || hasPendingBatches);
 
   const updateSite = React.useCallback((siteId: string, patch: Partial<SiteDraft>) => {
     setSites((current) => current.map((site) => site.id === siteId ? { ...site, ...patch } : site));
