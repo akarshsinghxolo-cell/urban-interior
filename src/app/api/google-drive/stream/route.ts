@@ -31,14 +31,20 @@ function safeFileName(input: string | null, fallback = "drive-file") {
 }
 
 async function resolveAccessToken(storageAccountId: string | null) {
+  if (storageAccountId) {
+    try {
+      return { token: await accessTokenForDriveConnection(storageAccountId) };
+    } catch {
+      return null;
+    }
+  }
+
   const workspace = await getWorkspace();
   const accounts = workspace.data.master.storageAccounts || [];
-  const candidates = storageAccountId
-    ? accounts.filter((account) => account.id === storageAccountId)
-    : accounts.filter((account) => account.status === "connected");
+  const candidates = accounts.filter((account) => account.status === "connected");
   for (const account of candidates) {
     try {
-      return { token: await accessTokenForDriveConnection(account.id), accountLabel: account.label };
+      return { token: await accessTokenForDriveConnection(account.id) };
     } catch {
       // Try the next connected account (multi-account failover).
     }
