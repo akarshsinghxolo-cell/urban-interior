@@ -45,8 +45,10 @@ test("missing local uploads cancel without server cleanup and stay gone after re
   await expect(confirmation).toBeVisible();
   await confirmation.getByRole("button", { name: "Cancel uploads", exact: true }).click();
   await expect(page.getByText("No pending uploads", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Recent uploads", exact: true })).toBeVisible();
   await page.reload();
   await page.getByRole("button", { name: /0 pending background items/ }).press("Enter");
   await expect(page.getByText("No pending uploads", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Recent uploads", exact: true })).toBeVisible();
   expect(cleanupRequests).toEqual([]);
 });
