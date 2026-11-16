@@ -92,6 +92,7 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
 
   if (!customer) return <EmptyState title="Customer not found" description="This Customer record is no longer available." />;
 
+  const customerNotes = customer.notes?.trim();
   const sites = db.sites.filter((row) => row.customer_id === customerId && !row.is_archived);
   const mobile = sanitizeIndianMobile(customer.phone);
   const whatsappHref = customerWhatsappHref(customer.whatsapp || customer.phone);
@@ -262,6 +263,10 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
               </div>
               {overlappingAcceptedScopeIds.size > 0 && <div role="alert" className="mt-2 flex items-start gap-2 rounded-md border border-warning/30 bg-warning/5 p-2.5 text-xs text-foreground"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning"/><span><strong>Commercial review required:</strong> {overlappingAcceptedScopeIds.size} active accepted scope(s) overlap across different quotations. The Accepted total keeps the stored values visible but should not be relied on until the earlier or replacement scope is cancelled.</span></div>}
             </section>
+            {customerNotes && <section aria-label="Customer notes">
+              <h3 className="mb-2 text-xs font-bold uppercase text-muted-foreground">Customer Notes</h3>
+              <p className="whitespace-pre-line rounded-lg border border-border bg-background p-3 text-sm text-foreground">{customerNotes}</p>
+            </section>}
             <section>
               <div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-bold uppercase text-muted-foreground">Sites</h3><Button size="sm" variant="outline" onClick={() => setCustomerForm({ autoAddSite: true })}><Plus className="mr-1 h-3.5 w-3.5" />Add site</Button></div>
               <div className="grid gap-2 sm:grid-cols-2">

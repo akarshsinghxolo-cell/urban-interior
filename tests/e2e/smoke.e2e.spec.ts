@@ -206,7 +206,10 @@ test.describe("customer drawer", () => {
 
       // Read from a fresh document so this checks persistence, not form state.
       await openCustomersDeskModule(page);
+      await expect(page.getByRole("button", { name: /Aarav Mehta/ }).first().getByLabel("Customer notes")).toHaveText(editedNotes);
       await openCustomerDrawer(page, "Aarav Mehta");
+      await clickDrawerTab(page, "Overview");
+      await expect(recordDrawer(page).getByRole("region", { name: "Customer notes" })).toContainText(editedNotes);
       const edit = recordDrawer(page).getByRole("button", { name: "Edit customer", exact: true });
       await edit.click();
       await expect(notes).toHaveValue(editedNotes);

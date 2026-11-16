@@ -141,6 +141,7 @@ export function CustomerDesk({ initialView = "customers" }: { initialView?: "cus
           const locationLabel = sites.length > 1
             ? `${sites.length} Sites`
             : formatLocationLabel(primarySite?.locality, primarySite?.address, primarySite?.city) || "Site pending";
+          const customerNotes = customer.notes?.trim();
           const active = customer.id === selected?.id;
           return (
             <ContextRow
@@ -161,6 +162,7 @@ export function CustomerDesk({ initialView = "customers" }: { initialView?: "cus
                   </div>
                   <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Phone className="h-3 w-3" /> {customer.phone || "No phone"}</p>
                   <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground"><MapPin className="h-3 w-3" /> {locationLabel}</p>
+                  {customerNotes && <p aria-label="Customer notes" className="mt-2 line-clamp-2 whitespace-pre-line text-xs text-foreground/70">{customerNotes}</p>}
                   <p className="mt-2 line-clamp-2 text-xs text-foreground/70">{progress.summary}</p>
                   <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label={`${progress.label}: ${progress.percent}%`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress.percent)}>
                     <div className="h-full rounded-full bg-primary" style={{ width: `${progress.percent}%` }} />
