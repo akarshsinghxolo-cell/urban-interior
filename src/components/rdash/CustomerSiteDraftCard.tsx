@@ -96,8 +96,8 @@ export function CustomerSiteDraftCard({
     const city = addressCity(data?.address);
     const locality = addressLocality(data?.address);
     if (data?.display_name && (!preserveEnteredAddress || !current.address.trim())) patch.address = data.display_name;
-    if (city && (!preserveEnteredAddress || !current.city.trim())) patch.city = city;
-    if (locality && (!preserveEnteredAddress || !current.locality.trim())) patch.locality = locality;
+    if (!preserveEnteredAddress || !current.city.trim()) patch.city = city;
+    if (!preserveEnteredAddress || !current.locality.trim()) patch.locality = locality;
     if (Object.keys(patch).length === 0) return false;
     onChange(patch);
     return true;

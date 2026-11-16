@@ -92,8 +92,8 @@ test.describe("customer drawer", () => {
     await page.route("**/api/location/reverse?*", async (route) => {
       await route.fulfill({
         json: {
-          display_name: "Gorakhpur, Uttar Pradesh, 273001, India",
-          address: { city: "Gorakhpur", suburb: "Civil Lines" },
+          display_name: "Hata, Kushinagar, Uttar Pradesh, 274303, India",
+          address: { county: "Hata", state_district: "Kushinagar" },
         },
       });
     });
@@ -103,11 +103,13 @@ test.describe("customer drawer", () => {
     const dialog = page.getByRole("dialog", { name: "Add New Customer", exact: true });
     await dialog.getByRole("button", { name: "Add Site", exact: true }).click();
     const coordinates = dialog.getByPlaceholder("GPS coordinates: 26.739800, 83.371200", { exact: true });
+    await dialog.getByPlaceholder("Locality / area", { exact: true }).fill("Taramandal");
+    await dialog.getByPlaceholder("City", { exact: true }).fill("Gorakhpur");
     await coordinates.fill("26.719749, 83.383718");
     await dialog.getByRole("button", { name: "Find address from coordinates", exact: true }).click();
-    await expect(dialog.getByPlaceholder("Full Site address", { exact: true })).toHaveValue("Gorakhpur, Uttar Pradesh, 273001, India");
-    await expect(dialog.getByPlaceholder("Locality / area", { exact: true })).toHaveValue("Civil Lines");
-    await expect(dialog.getByPlaceholder("City", { exact: true })).toHaveValue("Gorakhpur");
+    await expect(dialog.getByPlaceholder("Full Site address", { exact: true })).toHaveValue("Hata, Kushinagar, Uttar Pradesh, 274303, India");
+    await expect(dialog.getByPlaceholder("Locality / area", { exact: true })).toHaveValue("Hata");
+    await expect(dialog.getByPlaceholder("City", { exact: true })).toHaveValue("Kushinagar");
     await expect(dialog.getByPlaceholder("Search address or landmark", { exact: true })).toHaveCount(0);
 
     const uploadButton = dialog.getByRole("button", { name: "Add photos or files", exact: true });

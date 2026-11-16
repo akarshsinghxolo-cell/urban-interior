@@ -25,17 +25,17 @@ export async function reverseGeocodeWithNominatim(latitude: number, longitude: n
     return readJson<ReverseLocationResult>(response);
 }
 
-// Nominatim (and fallback providers) use different address keys per region —
-// Indian results often carry city_district/quarter instead of suburb. These
-// helpers give every GPS autofill the same broad extraction.
+// Nominatim (and fallback providers) use different address keys per region.
+// Indian rural results commonly expose the locality as county/tehsil and the
+// city-level value as state_district (for example Hata, Kushinagar).
 export function addressCity(address?: Record<string, string>) {
-    for (const key of ["city", "town", "village", "municipality"]) {
+    for (const key of ["city", "municipality", "state_district", "district", "county", "town", "village"]) {
         if (address?.[key]) return address[key];
     }
     return "";
 }
 export function addressLocality(address?: Record<string, string>) {
-    for (const key of ["suburb", "neighbourhood", "city_district", "quarter", "residential"]) {
+    for (const key of ["suburb", "neighbourhood", "city_district", "quarter", "residential", "village", "town", "county"]) {
         if (address?.[key]) return address[key];
     }
     return "";
