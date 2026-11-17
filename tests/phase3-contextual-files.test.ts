@@ -91,8 +91,11 @@ describe("Phase 3 contextual files", () => {
 
   test("site edit language treats uploads as files rather than photos only", async () => {
     const draft = await read("src/components/rdash/CustomerSiteDraftCard.tsx");
+    const picker = await read("src/components/rdash/ManagedFilePicker.tsx");
     expectTokens(draft, ["Site photos and files"]);
+    expectTokens(draft, ['label="Add site photos or videos"', "multiple fileCount"]);
     expectTokens(draft, ['caption: "Site file"']);
+    expect(picker).toContain("attached — tap to add more");
   });
 });
 

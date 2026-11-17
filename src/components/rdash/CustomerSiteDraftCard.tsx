@@ -319,7 +319,7 @@ export function CustomerSiteDraftCard({
 
           <div>
             <p className="text-[10px] font-semibold uppercase text-muted-foreground">Site photos and files</p>
-            <ManagedFilePicker id={`site-files-${draft.id}`} label="Add photos or files" accept={MANAGED_FILE_ACCEPT} multiple fileCount={existingFiles.length + draft.pendingPhotos.length} onPick={addPhotos} className="mt-1" />
+            <ManagedFilePicker id={`site-files-${draft.id}`} label="Add site photos or videos" accept={MANAGED_FILE_ACCEPT} multiple fileCount={existingFiles.length + draft.pendingPhotos.length} onPick={addPhotos} className="mt-1" />
             {(existingFiles.length > 0 || draft.pendingPhotos.length > 0) && (
               <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-5">
                 {existingFiles.map(({ attachment, asset }) => (

@@ -51,7 +51,9 @@ export function ManagedFilePicker({
                 <UploadCloud className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
                 <span className="truncate">
                     {fileCount > 0
-                        ? `${fileCount} file${fileCount === 1 ? "" : "s"} selected — tap to change`
+                        ? multiple
+                            ? `${fileCount} file${fileCount === 1 ? "" : "s"} attached — tap to add more`
+                            : `${fileCount} file selected — tap to change`
                         : label}
                 </span>
                 {fileCount > 0 ? <Paperclip className="h-3 w-3 shrink-0" aria-hidden="true" /> : null}
