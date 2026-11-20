@@ -118,7 +118,7 @@ export function CustomerWorkRequiredDraftSection({
   };
 
   return (
-    <section className="space-y-3 border-t border-border pt-4">
+    <section className="space-y-4 border-t border-border pt-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Wrench className="h-4 w-4 text-primary" />
@@ -140,7 +140,10 @@ export function CustomerWorkRequiredDraftSection({
         const displayNumber = draft.existing ? index + 1 : Math.max(existingCount, visibleWorkRequired.filter((row) => row.existing).length) + visibleWorkRequired.slice(0, index + 1).filter((row) => !row.existing).length;
         const expanded = expandedIds.has(draft.id);
         return (
-          <article key={draft.id} className="rounded-lg border border-border p-3">
+          <article
+            key={draft.id}
+            className={`rounded-xl border p-3 shadow-sm ${index % 2 === 0 ? "border-primary/20 bg-primary/[0.025]" : "border-border bg-muted/20"}`}
+          >
             <div className={expanded ? "mb-3 flex items-start gap-2" : "flex items-start gap-2"}>
               <Button
                 type="button"

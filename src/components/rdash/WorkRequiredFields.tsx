@@ -211,73 +211,6 @@ export function WorkRequiredFields({
 
   return (
     <div className="grid gap-3">
-      <div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <span className="text-[10px] font-semibold uppercase text-muted-foreground">Covered Areas</span>
-          <div className="flex flex-wrap justify-end gap-1">
-            {areas.length ? <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onChange({ areaIds: areas.map((area) => area.id) })}>Select all</Button> : null}
-            {value.areaIds.length ? <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onChange({ areaIds: [] })}>Clear editable</Button> : null}
-            <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => setNewAreaOpen((current) => !current)}>
-              <Plus className="mr-1 h-3 w-3" />{newAreaOpen ? "Close" : "Add Area"}
-            </Button>
-          </div>
-        </div>
-        {newAreaOpen ? (
-          <div className="mt-2 rounded-md border border-primary/20 bg-primary/[0.03] p-3">
-            <p className="text-xs font-semibold">Add Areas to {site?.name || "this Customer"}</p>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">Select one or more Area types. Their names can be edited below.</p>
-            <div className="mt-2 grid gap-2">
-              <div className="grid max-h-40 grid-cols-2 gap-1 overflow-y-auto rounded-md border border-border p-2 sm:grid-cols-3">
-                {areaTypeOptions.map((option) => <label key={option.value} className="flex items-center gap-2 text-xs"><input type="checkbox" checked={newAreaTypes.includes(option.value)} onChange={() => setNewAreaTypes((current) => current.includes(option.value) ? current.filter((value) => value !== option.value) : [...current, option.value])} />{option.label}</label>)}
-              </div>
-              <div className="flex gap-2">
-                <Input value={customAreaType} onChange={(event) => setCustomAreaType(event.target.value)} placeholder="New area type" className="h-9" />
-                <Button type="button" size="sm" variant="outline" onClick={addCustomAreaType} disabled={!customAreaType.trim()}>Add area type</Button>
-              </div>
-              <label>
-                <span className="text-[10px] font-semibold uppercase text-muted-foreground">Area notes</span>
-                <Input value={newAreaNotes} onChange={(event) => setNewAreaNotes(event.target.value)} placeholder="Optional area-specific notes" className="mt-1 h-9" />
-              </label>
-              <div className="flex justify-end">
-                <Button type="button" size="sm" onClick={createAreas} disabled={!newAreaTypes.length}><Plus className="mr-1 h-3.5 w-3.5" />Add selected Areas</Button>
-              </div>
-            </div>
-          </div>
-        ) : null}
-        {lockedAreaIds.length ? <p className="mt-1 flex items-center gap-1 text-[10px] text-emerald-700 dark:text-emerald-300"><LockKeyhole className="h-3 w-3" />Quoted Areas stay selected here because quotations and customer work use the same coverage.</p> : null}
-        {areas.length ? (
-          <div className="mt-1 grid max-h-72 grid-cols-1 gap-2 overflow-y-auto rounded-md border border-border p-2">
-            {areas.map((area) => (
-              <div key={area.id} role="group" aria-label={`Area ${area.name}`} className="rounded border border-border/70 px-2 py-2 text-xs">
-                <div className="flex items-center gap-1">
-                  <input
-                    type="checkbox"
-                    aria-label={`Include Area ${area.name}`}
-                    checked={effectiveAreaIds.has(area.id)}
-                    disabled={lockedAreas.has(area.id)}
-                    title={lockedAreas.has(area.id) ? "Included in an active quotation" : undefined}
-                    onChange={() => onChange({ areaIds: value.areaIds.includes(area.id) ? value.areaIds.filter((id) => id !== area.id) : [...value.areaIds, area.id] })}
-                  />
-                  <Input id={`area-name-${area.id}`} value={area.name} onChange={(event) => onUpdateArea?.(area.id, { name: event.target.value })} readOnly={!onUpdateArea} className="h-7 min-w-0 text-xs" aria-label={`Area name ${area.name}`} />
-                  {onDeleteArea ? <Button type="button" size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-destructive" onClick={() => onDeleteArea(area.id)} aria-label={`Delete Area ${area.name}`}><Trash2 className="h-3.5 w-3.5" /></Button> : null}
-                </div>
-                {effectiveAreaIds.has(area.id) && onUpdateArea ? <div className="mt-2 rounded-md bg-muted/30 p-2">
-                  <p className="mb-1.5 text-[10px] font-semibold uppercase text-muted-foreground">Area dimensions · single customer source</p>
-                  <CustomerAreaDimensionsFields
-                    value={{
-                      length: area.length ? String(area.length) : "",
-                      breadth: area.breadth ? String(area.breadth) : area.width ? String(area.width) : "",
-                      height: area.height ? String(area.height) : "",
-                    }}
-                    onChange={(dimensions) => onUpdateArea?.(area.id, dimensions)}
-                  />
-                </div> : null}
-              </div>
-            ))}
-          </div>
-        ) : <p className="mt-1 rounded-md border border-dashed border-warning/40 bg-warning/[0.04] px-3 py-2 text-xs text-muted-foreground">Add an Area here when the work location is known.</p>}
-      </div>
-
       <div className="rounded-md border border-border p-3">
         <p className="text-xs font-semibold">Work selection</p>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -436,6 +369,73 @@ export function WorkRequiredFields({
       ) : null}
       </div>
 
+      <div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <span className="text-[10px] font-semibold uppercase text-muted-foreground">Covered Areas</span>
+          <div className="flex flex-wrap justify-end gap-1">
+            {areas.length ? <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onChange({ areaIds: areas.map((area) => area.id) })}>Select all</Button> : null}
+            {value.areaIds.length ? <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onChange({ areaIds: [] })}>Clear editable</Button> : null}
+            <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => setNewAreaOpen((current) => !current)}>
+              <Plus className="mr-1 h-3 w-3" />{newAreaOpen ? "Close" : "Add Area"}
+            </Button>
+          </div>
+        </div>
+        {newAreaOpen ? (
+          <div className="mt-2 rounded-md border border-primary/20 bg-primary/[0.03] p-3">
+            <p className="text-xs font-semibold">Add Areas to {site?.name || "this Customer"}</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">Select one or more Area types. Their names can be edited below.</p>
+            <div className="mt-2 grid gap-2">
+              <div className="grid max-h-40 grid-cols-2 gap-1 overflow-y-auto rounded-md border border-border p-2 sm:grid-cols-3">
+                {areaTypeOptions.map((option) => <label key={option.value} className="flex items-center gap-2 text-xs"><input type="checkbox" checked={newAreaTypes.includes(option.value)} onChange={() => setNewAreaTypes((current) => current.includes(option.value) ? current.filter((value) => value !== option.value) : [...current, option.value])} />{option.label}</label>)}
+              </div>
+              <div className="flex gap-2">
+                <Input value={customAreaType} onChange={(event) => setCustomAreaType(event.target.value)} placeholder="New area type" className="h-9" />
+                <Button type="button" size="sm" variant="outline" onClick={addCustomAreaType} disabled={!customAreaType.trim()}>Add area type</Button>
+              </div>
+              <label>
+                <span className="text-[10px] font-semibold uppercase text-muted-foreground">Area notes</span>
+                <Input value={newAreaNotes} onChange={(event) => setNewAreaNotes(event.target.value)} placeholder="Optional area-specific notes" className="mt-1 h-9" />
+              </label>
+              <div className="flex justify-end">
+                <Button type="button" size="sm" onClick={createAreas} disabled={!newAreaTypes.length}><Plus className="mr-1 h-3.5 w-3.5" />Add selected Areas</Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+        {lockedAreaIds.length ? <p className="mt-1 flex items-center gap-1 text-[10px] text-emerald-700 dark:text-emerald-300"><LockKeyhole className="h-3 w-3" />Quoted Areas stay selected here because quotations and customer work use the same coverage.</p> : null}
+        {areas.length ? (
+          <div className="mt-1 grid max-h-72 grid-cols-1 gap-2 overflow-y-auto rounded-md border border-border p-2">
+            {areas.map((area) => (
+              <div key={area.id} role="group" aria-label={`Area ${area.name}`} className="rounded border border-border/70 px-2 py-2 text-xs">
+                <div className="flex items-center gap-1">
+                  <input
+                    type="checkbox"
+                    aria-label={`Include Area ${area.name}`}
+                    checked={effectiveAreaIds.has(area.id)}
+                    disabled={lockedAreas.has(area.id)}
+                    title={lockedAreas.has(area.id) ? "Included in an active quotation" : undefined}
+                    onChange={() => onChange({ areaIds: value.areaIds.includes(area.id) ? value.areaIds.filter((id) => id !== area.id) : [...value.areaIds, area.id] })}
+                  />
+                  <Input id={`area-name-${area.id}`} value={area.name} onChange={(event) => onUpdateArea?.(area.id, { name: event.target.value })} readOnly={!onUpdateArea} className="h-7 min-w-0 text-xs" aria-label={`Area name ${area.name}`} />
+                  {onDeleteArea ? <Button type="button" size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-destructive" onClick={() => onDeleteArea(area.id)} aria-label={`Delete Area ${area.name}`}><Trash2 className="h-3.5 w-3.5" /></Button> : null}
+                </div>
+                {effectiveAreaIds.has(area.id) && onUpdateArea ? <div className="mt-2 rounded-md bg-muted/30 p-2">
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase text-muted-foreground">Area dimensions · single customer source</p>
+                  <CustomerAreaDimensionsFields
+                    value={{
+                      length: area.length ? String(area.length) : "",
+                      breadth: area.breadth ? String(area.breadth) : area.width ? String(area.width) : "",
+                      height: area.height ? String(area.height) : "",
+                    }}
+                    onChange={(dimensions) => onUpdateArea?.(area.id, dimensions)}
+                  />
+                </div> : null}
+              </div>
+            ))}
+          </div>
+        ) : <p className="mt-1 rounded-md border border-dashed border-warning/40 bg-warning/[0.04] px-3 py-2 text-xs text-muted-foreground">Add an Area here when the work location is known.</p>}
+      </div>
+
       <label>
         <span className="text-[10px] font-semibold uppercase text-muted-foreground">Work Required title *</span>
         {/* ponytail: the title is derived, not typed — it mirrors the ticked
@@ -448,7 +448,7 @@ export function WorkRequiredFields({
         <span className="text-[10px] font-semibold uppercase text-muted-foreground">Notes</span>
         <Textarea value={value.description} onChange={(event) => onChange({ description: event.target.value })} placeholder="Scope notes, customer preference, access constraints…" rows={3} className="mt-1" />
       </label>
-      <div className="flex flex-wrap items-end justify-between gap-2">
+      <div className="grid gap-2">
         <div className="flex flex-wrap items-end gap-2">
           <label className="w-36">
             <span className="text-[10px] font-semibold uppercase text-muted-foreground">Priority</span>
@@ -462,9 +462,9 @@ export function WorkRequiredFields({
           </label>
         </div>
         {onAddNext ? (
-          <div className="flex flex-wrap justify-end gap-2">
-            <Button type="button" size="sm" variant="outline" onClick={() => onAddNext("areas")}><Plus className="mr-1 h-3.5 w-3.5" />Add another using these Areas</Button>
-            <Button type="button" size="sm" variant="outline" onClick={() => onAddNext("copy")}>Copy this requirement</Button>
+          <div className="flex flex-wrap items-center justify-start gap-2">
+            <Button type="button" size="sm" variant="outline" className="h-8 whitespace-nowrap px-2.5 text-xs" onClick={() => onAddNext("areas")}><Plus className="mr-1 h-3.5 w-3.5" />Add another using these Areas</Button>
+            <Button type="button" size="sm" variant="outline" className="h-8 whitespace-nowrap px-2.5 text-xs" onClick={() => onAddNext("copy")}>Copy this requirement</Button>
           </div>
         ) : null}
       </div>
