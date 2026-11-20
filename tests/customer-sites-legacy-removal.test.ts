@@ -63,6 +63,7 @@ test("shared Add/Edit Customer form orders Sites then editable Work Required wit
   const workRequired = customerSitesDialog.indexOf("<CustomerWorkRequiredDraftSection");
 
   expectTokens(customerSitesDialog, ['isEdit ? "Edit Customer and Sites" : "Add New Customer"']);
+  expect(customerSitesDialog).toContain("sm:max-w-[calc(100vw-2rem)] xl:max-w-6xl");
   expect(sites).toBeGreaterThanOrEqual(0);
   expect(workRequired).toBeGreaterThan(sites);
   expect(customerSitesDialog).not.toContain("CustomerWorkInterests");
@@ -71,6 +72,7 @@ test("shared Add/Edit Customer form orders Sites then editable Work Required wit
   expectNoTokens(workRequiredFields, ["suggested from this customer"]);
   expectTokens(workRequiredFields, ["+ Add category"]);
   expectTokens(workRequiredFields, ["+ Add subcategory"]);
+  expect(workRequiredFields).toContain("grid gap-3 md:grid-cols-3");
   expect(workRequiredFields.indexOf("Covered Areas")).toBeGreaterThan(workRequiredFields.indexOf("Work Categories"));
   expect(workRequiredFields).toContain("flex flex-wrap items-center justify-start gap-2");
   expect(workRequiredFields.indexOf("Add another using these Areas")).toBeLessThan(workRequiredFields.indexOf("Copy this requirement"));

@@ -286,7 +286,7 @@ export function CustomerSitesDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && requestClose()}>
-      <DialogContent className="h-[92dvh] max-h-[92dvh] max-w-4xl gap-0 overflow-hidden p-0 sm:h-[min(92dvh,56rem)]">
+      <DialogContent className="h-[92dvh] max-h-[92dvh] gap-0 overflow-hidden p-0 sm:h-[min(92dvh,56rem)] sm:max-w-[calc(100vw-2rem)] xl:max-w-6xl">
         <form className="flex h-full min-h-0 min-w-0 flex-col" onSubmit={(event) => { event.preventDefault(); void saveAndClose(); }}>
           <DialogHeader className="shrink-0 border-b border-border px-5 py-3">
             <DialogTitle className="flex items-center gap-2 text-base">

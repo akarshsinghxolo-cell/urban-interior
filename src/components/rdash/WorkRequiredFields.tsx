@@ -217,8 +217,8 @@ export function WorkRequiredFields({
           <p className="text-[11px] text-muted-foreground">Tick every required category, subcategory, and work type.</p>
           <a href="/workspace/masters" className="text-[11px] font-medium text-primary hover:underline">Manage catalogue</a>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-        <div>
+        <div className="grid gap-3 md:grid-cols-3">
+          <div>
           <span className="text-[10px] font-semibold uppercase text-muted-foreground">Work Categories</span>
           <div className="mt-1">
             <MultiTickDropdown
@@ -275,8 +275,8 @@ export function WorkRequiredFields({
               className="mt-1"
             />
           ) : null}
-        </div>
-        <div>
+          </div>
+          <div>
           <span className="text-[10px] font-semibold uppercase text-muted-foreground">Work Subcategories</span>
           <div className="mt-1">
             <MultiTickDropdown
@@ -321,52 +321,51 @@ export function WorkRequiredFields({
               }}
             />
           ) : null}
-        </div>
-        </div>
-
-      {selectedWorkTypes.length ? (
-        <div className="mt-3">
-          <span className="text-[10px] font-semibold uppercase text-muted-foreground">Work Types</span>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">Grade within each selected subcategory, e.g. Kitchen Cabinets (Modular) · Premium.</p>
-          {/* ponytail: same tick-dropdown format as subcategories; each group
-              carries its own "+ Add work type" row (scoped to that
-              subcategory), writing master via AddWorkTypeAction and
-              auto-ticking the created grade. */}
-          <div className="mt-1">
-            <MultiTickDropdown
-              key={value.subcategoryIds.join("|")}
-              ariaLabel="Work types"
-              selected={value.workTypeIds}
-              groups={workTypeGroups}
-              placeholder="Select work types"
-              onToggle={(workTypeId) => toggleWorkType({ id: workTypeId })}
-              inline
-              searchable
-            />
           </div>
-          {addWorkTypeSubcategoryId && value.subcategoryIds.includes(addWorkTypeSubcategoryId) ? (
-            <AddWorkTypeAction
-              key={`work-required-add-work-type-${addWorkTypeSubcategoryId}`}
-              subcategoryId={addWorkTypeSubcategoryId}
-              initiallyAdding
-              onCancelled={() => setAddWorkTypeSubcategoryId(null)}
-              onCreated={(workTypeId) => {
-                setAddWorkTypeSubcategoryId(null);
-                const workTypeIds = [...new Set([...value.workTypeIds, workTypeId])];
-                // The title IS the selection: re-derive so the new grade
-                // appears in the quotation line label immediately. Read the
-                // fresh master from the store — the db prop is one render
-                // behind AddWorkTypeAction's mutation within this tick.
-                const master = useRDashStore.getState().db.master;
-                onChange({
-                  workTypeIds,
-                  title: workRequiredTitleFromSelection(master.workSubcategories, value.subcategoryIds, workTypeIds),
-                });
-              }}
-            />
+          {selectedWorkTypes.length ? (
+            <div>
+              <span className="text-[10px] font-semibold uppercase text-muted-foreground">Work Types</span>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">Grade within each selected subcategory, e.g. Kitchen Cabinets (Modular) · Premium.</p>
+              {/* ponytail: same tick-dropdown format as subcategories; each group
+                  carries its own "+ Add work type" row (scoped to that
+                  subcategory), writing master via AddWorkTypeAction and
+                  auto-ticking the created grade. */}
+              <div className="mt-1">
+                <MultiTickDropdown
+                  key={value.subcategoryIds.join("|")}
+                  ariaLabel="Work types"
+                  selected={value.workTypeIds}
+                  groups={workTypeGroups}
+                  placeholder="Select work types"
+                  onToggle={(workTypeId) => toggleWorkType({ id: workTypeId })}
+                  inline
+                  searchable
+                />
+              </div>
+              {addWorkTypeSubcategoryId && value.subcategoryIds.includes(addWorkTypeSubcategoryId) ? (
+                <AddWorkTypeAction
+                  key={`work-required-add-work-type-${addWorkTypeSubcategoryId}`}
+                  subcategoryId={addWorkTypeSubcategoryId}
+                  initiallyAdding
+                  onCancelled={() => setAddWorkTypeSubcategoryId(null)}
+                  onCreated={(workTypeId) => {
+                    setAddWorkTypeSubcategoryId(null);
+                    const workTypeIds = [...new Set([...value.workTypeIds, workTypeId])];
+                    // The title IS the selection: re-derive so the new grade
+                    // appears in the quotation line label immediately. Read the
+                    // fresh master from the store — the db prop is one render
+                    // behind AddWorkTypeAction's mutation within this tick.
+                    const master = useRDashStore.getState().db.master;
+                    onChange({
+                      workTypeIds,
+                      title: workRequiredTitleFromSelection(master.workSubcategories, value.subcategoryIds, workTypeIds),
+                    });
+                  }}
+                />
+              ) : null}
+            </div>
           ) : null}
         </div>
-      ) : null}
       </div>
 
       <div>
