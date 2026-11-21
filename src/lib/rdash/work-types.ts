@@ -311,6 +311,11 @@ export function itemOptionPairs(item: Pick<LineItem, "subcategory_id" | "work_ty
   return [{ subcategory_id: item.subcategory_id, work_type_id: item.work_type_id }];
 }
 
+/** Captured area rows measured by one selected work type, including alternatives. */
+export function capturedItemsForWorkType(items: LineItem[], workTypeId: ID): LineItem[] {
+  return items.filter((item) => itemOptionPairs(item).some((pair) => pair.work_type_id === workTypeId));
+}
+
 export function promoteOptionPair<T>(pairs: T[], index: number): T[] {
   if (index <= 0 || index >= pairs.length) return pairs;
   return [pairs[index], ...pairs.slice(0, index), ...pairs.slice(index + 1)];

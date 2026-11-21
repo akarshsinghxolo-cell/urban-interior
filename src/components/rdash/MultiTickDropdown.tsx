@@ -37,6 +37,7 @@ export function MultiTickDropdown({
     ariaLabel,
     onToggle,
     footer,
+    renderItemDetails,
     inline = false,
     searchable = false,
 }: {
@@ -47,6 +48,7 @@ export function MultiTickDropdown({
     ariaLabel: string;
     onToggle: (id: string) => void;
     footer?: (close: () => void) => React.ReactNode;
+    renderItemDetails?: (item: MultiTickGroup["items"][number], selected: boolean) => React.ReactNode;
     inline?: boolean;
     searchable?: boolean;
 }) {
@@ -62,12 +64,14 @@ export function MultiTickDropdown({
                     {groupIndex > 0 ? <div className="h-3" aria-hidden="true" /> : null}
                     {group.items.map((item) => {
                         const ticked = selected.includes(item.id);
-                        return (
-                            <label key={item.id} className="flex min-h-9 cursor-pointer items-start gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent/40">
+                        const details = renderItemDetails?.(item, ticked);
+                        return <div key={item.id} className="rounded hover:bg-accent/40">
+                            <label className="flex min-h-9 cursor-pointer items-start gap-2 px-2 py-1.5 text-xs">
                                 <input className="mt-0.5 shrink-0" type="checkbox" disabled={disabled} checked={ticked} onChange={() => onToggle(item.id)} />
                                 <span className="min-w-0 whitespace-normal break-words leading-4" title={item.name}>{item.name}</span>
                             </label>
-                        );
+                            {details ? <div className="px-2 pb-2 pl-8">{details}</div> : null}
+                        </div>;
                     })}
                     {group.footer ? <div className="mt-0.5 px-1 pb-0.5">{group.footer(close)}</div> : null}
                 </React.Fragment>

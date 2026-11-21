@@ -60,7 +60,7 @@ export function CustomerWorkRequiredDraftSection({
   const [expandedIds, setExpandedIds] = React.useState<Set<string>>(() => new Set(workRequired.filter((draft) => !draft.existing).map((draft) => draft.id)));
 
   const appendDraft = (draft: CustomerWorkRequiredDraft) => {
-    setWorkRequired((current) => [...current, draft]);
+    setWorkRequired((current) => [draft, ...current]);
     setExpandedIds((current) => new Set(current).add(draft.id));
   };
 

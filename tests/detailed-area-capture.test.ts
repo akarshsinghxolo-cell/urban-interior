@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
+import type { LineItem } from "../src/lib/rdash/types";
 import {
+  capturedItemsForWorkType,
   reconcileWorkRequiredSelection,
   promoteOptionPair,
   seedDetailedAreaLines,
@@ -21,6 +23,19 @@ describe("canonical Customer site / Area / Work Required workflow", () => {
     expect(detailFields).toContain("Measurement basis");
     expect(detailFields).toContain("Alternatives · customer takes any one · one shared measurement");
     expect(formModel).toContain("structured_items: draft.structuredItems");
+  });
+
+  test("new Work Required drafts open at the top of the Customer form", async () => {
+    const section = await source("src/components/rdash/CustomerWorkRequiredDraftSection.tsx");
+    expect(section).toContain("setWorkRequired((current) => [draft, ...current])");
+  });
+
+  test("selected Work Types expose the shared captured Area measurement", async () => {
+    const fields = await source("src/components/rdash/WorkRequiredFields.tsx");
+    expect(fields).toContain("renderItemDetails");
+    expect(fields).toContain("capturedItemsForWorkType");
+    expect(fields).toContain("Captured measurement for");
+    expect(fields).toContain("Quantity pending · add it under a Covered Area.");
   });
 
   test("Customer owns the one rich detailed-area implementation", async () => {
@@ -136,6 +151,26 @@ describe("detailed-area seed and reconciliation primitives", () => {
       { subcategory_id: "sub-glass", work_type_id: "wt-glass-standard" },
       { subcategory_id: "sub-ss", work_type_id: "wt-ss-standard" },
     ]);
+  });
+
+  test("maps one captured measurement to its primary and alternative work types", () => {
+    const captured: LineItem[] = [{
+      id: "line-balcony",
+      title: "Balcony · railing",
+      quantity: 24,
+      rate: 0,
+      amount: 0,
+      subcategory_id: "sub-glass",
+      work_type_id: "wt-glass-standard",
+      option_pairs: [
+        { subcategory_id: "sub-glass", work_type_id: "wt-glass-standard" },
+        { subcategory_id: "sub-ss", work_type_id: "wt-ss-standard" },
+      ],
+    }];
+
+    expect(capturedItemsForWorkType(captured, "wt-glass-standard")).toHaveLength(1);
+    expect(capturedItemsForWorkType(captured, "wt-ss-standard")).toHaveLength(1);
+    expect(capturedItemsForWorkType(captured, "wt-missing")).toHaveLength(0);
   });
 
   test("splits cross-category work into valid downstream lines", () => {

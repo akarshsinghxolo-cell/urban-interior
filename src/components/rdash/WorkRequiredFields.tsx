@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { Area, LineItem, Priority, RDashDatabase, Site } from "@/lib/rdash/types";
-import { isActiveWorkTaxonomy, itemOptionPairs, pruneWorkTypeIds, seedDetailedAreaLines, subcategoriesWithSelectedWorkTypes, withPrimaryWorkTypeIds, workRequiredTitleFromSelection, workTypesForSubcategory } from "@/lib/rdash/work-types";
+import { capturedItemsForWorkType, isActiveWorkTaxonomy, itemOptionPairs, pruneWorkTypeIds, seedDetailedAreaLines, subcategoriesWithSelectedWorkTypes, withPrimaryWorkTypeIds, workRequiredTitleFromSelection, workTypesForSubcategory } from "@/lib/rdash/work-types";
 import { useRDashStore } from "@/lib/rdash/store";
 import { AREA_TYPES } from "./customer-sites-form-model";
 import { CustomerAreaDimensionsFields, type CustomerAreaDimensionsDraft } from "./customer/CustomerAreaDimensionsFields";
@@ -274,6 +274,18 @@ export function WorkRequiredFields({
       : item));
   };
 
+  const updateCapturedQuantity = (item: LineItem, quantityValue: string) => {
+    const area = areas.find((row) => row.id === item.area_id);
+    if (!area) return;
+    const quantity = Number(quantityValue) || 0;
+    const nextItem = normalizeCustomerDetailedWorkItem(db, area, {
+      ...item,
+      quantity,
+      quantity_is_manual: quantity > 0,
+    });
+    updateDetailedWork(item.id, nextItem);
+  };
+
   return (
     <div className="grid gap-3">
       <div className="rounded-md border border-border p-3">
@@ -405,6 +417,26 @@ export function WorkRequiredFields({
                   onToggle={(workTypeId) => toggleWorkType({ id: workTypeId })}
                   inline
                   searchable
+                  renderItemDetails={(workType, selected) => {
+                    if (!selected) return null;
+                    const captured = capturedItemsForWorkType(structuredItems, workType.id);
+                    return <div className="space-y-1 rounded-md border border-border/80 bg-muted/30 p-1.5" aria-label={`Captured measurement for ${workType.name}`}>
+                      {captured.length ? captured.map((item) => <div key={item.id} className="flex min-w-0 items-center gap-1.5">
+                        <span className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground" title={item.area_name}>{item.area_name || areas.find((area) => area.id === item.area_id)?.name || "Area"}</span>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="any"
+                          inputMode="decimal"
+                          aria-label={`${workType.name} quantity for ${item.area_name || "Area"}`}
+                          value={item.quantity || ""}
+                          onChange={(event) => updateCapturedQuantity(item, event.target.value)}
+                          className="h-7 w-24 px-2 text-right text-[11px]"
+                        />
+                        <span className="w-8 shrink-0 text-[10px] font-medium text-muted-foreground">{item.unit_name || item.unit_id || "sqft"}</span>
+                      </div>) : <p className="text-[10px] text-muted-foreground">Quantity pending · add it under a Covered Area.</p>}
+                    </div>;
+                  }}
                 />
               </div>
               {addWorkTypeSubcategoryId && value.subcategoryIds.includes(addWorkTypeSubcategoryId) ? (
