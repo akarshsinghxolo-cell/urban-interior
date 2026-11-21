@@ -4,7 +4,6 @@ import type { LineItem } from "../src/lib/rdash/types";
 import {
   capturedItemsForWorkType,
   reconcileWorkRequiredSelection,
-  promoteOptionPair,
   seedDetailedAreaLines,
 } from "../src/lib/rdash/work-types";
 
@@ -54,8 +53,6 @@ describe("canonical Customer site / Area / Work Required workflow", () => {
       "editOfItemId",
       "scrollEditDraftIntoView",
       "option_pairs",
-      "addAlternative",
-      "removeAlternative",
       "manualQuantity",
       "incomplete/duplicate row(s) left untouched",
     ]) expect(capture).toContain(token);
@@ -67,27 +64,21 @@ describe("canonical Customer site / Area / Work Required workflow", () => {
     expect(portfolio).not.toContain("measuredQuantity");
   });
 
-  test("alternatives remain one measured decision in the canonical Customer capture", async () => {
+  test("capture renders Add/Edit Customer selections as a read-only nested hierarchy", async () => {
     const capture = await source("src/components/rdash/customer/CustomerWorkCaptureDialog.tsx");
     expect(capture).toContain("pairsForLine");
     expect(capture).toContain("option_pairs");
-    expect(capture).toContain("Alternatives · customer takes any one · one shared measurement");
-    expect(capture).toContain("addAlternative");
-    expect(capture).toContain("removeAlternative");
     expect(capture).toContain("itemScopeKeys");
-    expect(capture).toContain("border-success/40 bg-success/10 text-success");
-    expect(capture).toContain("border-warning/40 bg-warning/10 text-warning");
-    expect(capture).toContain("makeAlternativePrimary");
-    expect(capture).toContain("Make ${label} primary");
-    expect(capture).toContain("Add another option");
-    expect(capture).toContain("Add alternative ${candidate.label}");
-    expect(capture).not.toContain("＋ Add subcategory / work type alternative");
-  });
-
-  test("selecting an alternative promotes it without losing the other choices", () => {
-    const pairs = [{ subcategory_id: "pvc" }, { subcategory_id: "pop" }, { subcategory_id: "gypsum" }];
-    expect(promoteOptionPair(pairs, 2).map((pair) => pair.subcategory_id)).toEqual(["gypsum", "pvc", "pop"]);
-    expect(promoteOptionPair(pairs, 0)).toBe(pairs);
+    expect(capture).toContain("Selected in Add/Edit Customer");
+    expect(capture).toContain("Work selection from Add/Edit Customer");
+    expect(capture).toContain('role="tree"');
+    expect(capture).toContain("Change work selection there");
+    expect(capture).toContain("Add the work selection in Add/Edit Customer first.");
+    expect(capture).not.toContain("addAlternative");
+    expect(capture).not.toContain("removeAlternative");
+    expect(capture).not.toContain("makeAlternativePrimary");
+    expect(capture).not.toContain("MEASURE_OPTIONS");
+    expect(capture).not.toContain(">Add work</Button>");
   });
 
   test("Site Execution launches Customer workflows and cannot build a second Area or quotation path", async () => {
