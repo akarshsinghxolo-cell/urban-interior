@@ -103,7 +103,7 @@ export function WorkRequiredFields({
       ...(value.structuredItems ? { structuredItems: value.structuredItems.filter((item) => !item.area_id || areaIds.includes(item.area_id)) } : {}),
     });
   };
-  const structuredItems = value.structuredItems || [];
+  const structuredItems = React.useMemo(() => value.structuredItems || [], [value.structuredItems]);
   const updateStructuredItems = (items: LineItem[]) => onDraftChange({ structuredItems: items });
   const updateDetailedWork = (itemId: string, nextItem: LineItem) => {
     const nextItems = structuredItems.map((item) => item.id === itemId ? nextItem : item);
@@ -286,6 +286,36 @@ export function WorkRequiredFields({
     updateDetailedWork(item.id, nextItem);
   };
 
+  React.useEffect(() => {
+    const areaIds = [...new Set([...value.areaIds, ...lockedAreaIds])];
+    if (value.structuredItems === undefined || !value.workTypeIds.length || !areaIds.length) return;
+    const seeds = seedDetailedAreaLines({
+      siteWorks: [{
+        id: workRequiredId || "draft-work-required",
+        work_subcategory_ids: value.subcategoryIds,
+        work_type_ids: value.workTypeIds,
+        area_ids: areaIds,
+        structured_items: structuredItems,
+      }],
+      workSubcategories: db.master.workSubcategories,
+    });
+    const missingItems = seeds.flatMap((seed) => {
+      const area = areas.find((row) => row.id === seed.area_id);
+      if (!area) return [];
+      return [createCustomerDetailedWorkItem({
+        db,
+        area,
+        siteId: site?.id,
+        workRequiredId,
+        categoryId: seed.category_id,
+        subcategoryId: seed.subcategory_id,
+        workTypeId: seed.work_type_id,
+        optionPairs: seed.option_pairs,
+      })];
+    });
+    if (missingItems.length) onDraftChange({ structuredItems: [...structuredItems, ...missingItems] });
+  }, [areas, db, lockedAreaIds, onDraftChange, site?.id, structuredItems, value.areaIds, value.subcategoryIds, value.structuredItems, value.workTypeIds, workRequiredId]);
+
   return (
     <div className="grid gap-3">
       <div className="rounded-md border border-border p-3">
@@ -434,7 +464,7 @@ export function WorkRequiredFields({
                           className="h-7 w-24 px-2 text-right text-[11px]"
                         />
                         <span className="w-8 shrink-0 text-[10px] font-medium text-muted-foreground">{item.unit_name || item.unit_id || "sqft"}</span>
-                      </div>) : <p className="text-[10px] text-muted-foreground">Quantity pending · add it under a Covered Area.</p>}
+                      </div>) : <p className="text-[10px] text-muted-foreground">Select a Covered Area to add its quantity here.</p>}
                     </div>;
                   }}
                 />
@@ -585,3 +615,4 @@ export function WorkRequiredFields({
     </div>
   );
 }
+
