@@ -38,6 +38,7 @@ import {
   type CustomerWorkRequiredDraft,
   type SiteDraft,
 } from "./customer-sites-form-model";
+import { customerDetailedWorkItemIsComplete } from "./customer/CustomerDetailedWorkItemFields";
 
 function scrollToField(id: string) {
   window.requestAnimationFrame(() => {
@@ -239,6 +240,10 @@ export function CustomerSitesDialog({
       if (!work.title.trim()) { toast.error("Enter a title for every Work Required"); return false; }
       if (!workRequiredDraftIsCanonical(work)) {
         toast.error("For each Work Required, select a Category, at least one Subcategory, at least one Work Type, and a title.");
+        return false;
+      }
+      if (work.structuredItems.some((item) => item.customer_form_draft && !customerDetailedWorkItemIsComplete(item))) {
+        toast.error("Complete or remove every highlighted planned work detail before saving.");
         return false;
       }
     }

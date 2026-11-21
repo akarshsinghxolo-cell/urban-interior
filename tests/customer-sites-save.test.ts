@@ -182,6 +182,7 @@ describe("Work Required budget", () => {
     subcategoryIds: ["fc2_kit"],
     workTypeIds: ["wt-fc2_kit-standard"],
     areaIds: [],
+    structuredItems: [],
     description: "",
     priority: "medium",
     budget,
@@ -558,6 +559,50 @@ describe("canonical customer and Sites save", () => {
       updated_at: options.now,
     });
     expect(result.db.workRequired[0].structured_items).toHaveLength(1);
+  });
+
+  test("round-trips area-level captured details through the customer editor", () => {
+    const db = database();
+    db.areas = [{ id: "area-existing", site_id: "site-1", name: "Kitchen", area_type: "kitchen", stage: "measured", unit: "ft", created_at: options.now, updated_at: options.now }];
+    db.workRequired = [{
+      id: "work-existing",
+      customer_id: "customer-1",
+      site_id: "site-1",
+      title: "Kitchen work",
+      work_subcategory_ids: ["fc2_kit"],
+      work_type_ids: ["wt-fc2_kit-standard"],
+      area_ids: ["area-existing"],
+      structured_items: [{ id: "line-old", title: "Old detail", area_id: "area-existing", quantity: 1, rate: 10, amount: 10 }],
+      status: "new",
+      priority: "medium",
+      created_at: options.now,
+      updated_at: options.now,
+    }];
+    const editedLine = {
+      id: "line-new",
+      title: "Kitchen · Modular Kitchen",
+      area_id: "area-existing",
+      category_id: "fc2",
+      subcategory_id: "fc2_kit",
+      work_type_id: "wt-fc2_kit-standard",
+      quantity: 33,
+      unit_id: "rft",
+      rate: 100,
+      amount: 3300,
+    };
+
+    const draft = draftForWorkRequired(db.workRequired[0], db.master);
+    const result = applyCustomerWithSitesSave(db, {
+      customerId: "customer-1",
+      customer: { ...db.customers[0] },
+      sites: [{ ...db.sites[0] }],
+      areas: [{ ...db.areas[0] }],
+      workRequired: [workRequiredPayload({ ...draft, structuredItems: [{ ...editedLine, customer_form_draft: true }] })],
+    }, options);
+
+    expect(result.db.workRequired[0].structured_items).toEqual([expect.objectContaining(editedLine)]);
+    expect(result.db.workRequired[0].structured_items?.[0]).not.toHaveProperty("customer_form_draft");
+    expect(result.workRequiredChanges).toHaveLength(1);
   });
 
   test("rejects moving an existing Work Required to another Site", () => {

@@ -299,7 +299,7 @@ export function CustomerWorkCaptureDialog({
   const editSavedItem = (groupKey: string, item: LineItem) => {
     setGroups((current) => current.map((group) => {
       if (group.key !== groupKey || group.lines.some((line) => line.editOfItemId === item.id)) return group;
-      const measure: WorkMeasureBasis = item.unit_id === "rft" ? "length" : measureFor(item.subcategory_id);
+      const measure: WorkMeasureBasis = item.measurement_basis || (item.unit_id === "rft" ? "length" : measureFor(item.subcategory_id));
       return {
         ...group,
         open: true,
@@ -311,11 +311,11 @@ export function CustomerWorkCaptureDialog({
           option_pairs: item.option_pairs as OptionPair[] | undefined,
           target_work_required_id: item.work_required_id || workRequired.id,
           measure,
-          walls: 1,
+          walls: item.measurement_walls === 2 ? 2 : 1,
           quantity: item.quantity > 0 ? String(item.quantity) : "",
           notes: item.description,
           editOfItemId: item.id,
-          manualQuantity: true,
+          manualQuantity: item.quantity_is_manual ?? true,
         }, ...group.lines],
       };
     }));
@@ -541,6 +541,9 @@ export function CustomerWorkCaptureDialog({
         floor_area: normalized.length && normalized.breadth ? round(normalized.length * normalized.breadth) : undefined,
         quantity: Number(line.quantity) > 0 ? Number(line.quantity) : measured.quantity,
         unit_id: measured.unit,
+        measurement_basis: line.measure,
+        measurement_walls: line.walls,
+        quantity_is_manual: line.manualQuantity,
         notes: line.notes?.trim() || undefined,
       };
     });

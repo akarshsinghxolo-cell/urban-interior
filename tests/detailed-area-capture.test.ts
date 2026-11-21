@@ -9,6 +9,20 @@ import {
 const source = async (path: string) => testFile(path).text();
 
 describe("canonical Customer site / Area / Work Required workflow", () => {
+  test("Add/Edit Customer exposes captured details directly below each Area dimension source", async () => {
+    const fields = await source("src/components/rdash/WorkRequiredFields.tsx");
+    const detailFields = await source("src/components/rdash/customer/CustomerDetailedWorkItemFields.tsx");
+    const formModel = await source("src/components/rdash/customer-sites-form-model.ts");
+
+    expect(fields).toContain("Area dimensions · single customer source");
+    expect(fields).toContain("Captured details");
+    expect(fields).toContain("CustomerDetailedWorkItemFields");
+    expect(fields).toContain("Add planned work");
+    expect(detailFields).toContain("Measurement basis");
+    expect(detailFields).toContain("Alternatives · customer takes any one · one shared measurement");
+    expect(formModel).toContain("structured_items: draft.structuredItems");
+  });
+
   test("Customer owns the one rich detailed-area implementation", async () => {
     const capture = await source("src/components/rdash/customer/CustomerWorkCaptureDialog.tsx");
     const portfolio = await source("src/components/rdash/modules/CustomerDeskPortfolio.tsx");

@@ -166,7 +166,7 @@ export function CustomerWorkRequiredDraftSection({
               </div>
               <select
                 value={draft.siteId}
-                onChange={(event) => updateWorkRequired(draft.id, { siteId: event.target.value, areaIds: [] })}
+                onChange={(event) => updateWorkRequired(draft.id, { siteId: event.target.value, areaIds: [], structuredItems: [] })}
                 disabled={draft.existing && Boolean(draft.siteId)}
                 className="h-8 w-auto min-w-0 max-w-full shrink basis-28 rounded-md border border-input bg-card px-2 text-xs"
                 aria-label={`Customer or Site for Work Required ${displayNumber}`}
@@ -187,6 +187,7 @@ export function CustomerWorkRequiredDraftSection({
             </div>
             {expanded ? <WorkRequiredFields
               db={db}
+              workRequiredId={draft.id}
               site={site}
               areas={siteAreas}
               value={draft}
@@ -200,7 +201,11 @@ export function CustomerWorkRequiredDraftSection({
               onUpdateArea={(areaId, patch) => setAreas((current) => current.map((area) => area.id === areaId ? { ...area, ...patch } : area))}
               onDeleteArea={(areaId) => {
                 setAreas((current) => current.flatMap((area) => area.id !== areaId ? [area] : area.existing ? [{ ...area, archiveRequested: true }] : []));
-                setWorkRequired((current) => current.map((work) => ({ ...work, areaIds: work.areaIds.filter((id) => id !== areaId) })));
+                setWorkRequired((current) => current.map((work) => ({
+                  ...work,
+                  areaIds: work.areaIds.filter((id) => id !== areaId),
+                  structuredItems: work.structuredItems.filter((item) => item.area_id !== areaId),
+                })));
               }}
               onAddNext={(mode) => addFromWorkRequired(draft, mode)}
             /> : null}

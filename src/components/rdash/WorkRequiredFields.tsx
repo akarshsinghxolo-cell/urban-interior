@@ -6,11 +6,12 @@ import { LockKeyhole, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import type { Area, Priority, RDashDatabase, Site } from "@/lib/rdash/types";
-import { isActiveWorkTaxonomy, pruneWorkTypeIds, subcategoriesWithSelectedWorkTypes, withPrimaryWorkTypeIds, workRequiredTitleFromSelection, workTypesForSubcategory } from "@/lib/rdash/work-types";
+import type { Area, LineItem, Priority, RDashDatabase, Site } from "@/lib/rdash/types";
+import { isActiveWorkTaxonomy, itemOptionPairs, pruneWorkTypeIds, seedDetailedAreaLines, subcategoriesWithSelectedWorkTypes, withPrimaryWorkTypeIds, workRequiredTitleFromSelection, workTypesForSubcategory } from "@/lib/rdash/work-types";
 import { useRDashStore } from "@/lib/rdash/store";
 import { AREA_TYPES } from "./customer-sites-form-model";
 import { CustomerAreaDimensionsFields, type CustomerAreaDimensionsDraft } from "./customer/CustomerAreaDimensionsFields";
+import { createCustomerDetailedWorkItem, CustomerDetailedWorkItemFields, normalizeCustomerDetailedWorkItem } from "./customer/CustomerDetailedWorkItemFields";
 import { AddWorkCategoryAction, AddWorkSubcategoryAction, AddWorkTypeAction } from "./WorkTaxonomyQuickAdd";
 import { MultiTickDropdown } from "./MultiTickDropdown";
 
@@ -20,6 +21,8 @@ export type WorkRequiredFormDraft = {
   subcategoryIds: string[];
   workTypeIds: string[];
   areaIds: string[];
+  /** Present in the Add/Edit Customer workflow; omitted by compact launchers. */
+  structuredItems?: LineItem[];
   description: string;
   priority: Priority;
   budget: string;
@@ -57,6 +60,7 @@ export function emptyWorkRequiredFormDraft(): WorkRequiredFormDraft {
 
 export function WorkRequiredFields({
   db,
+  workRequiredId,
   site,
   areas,
   value,
@@ -68,6 +72,7 @@ export function WorkRequiredFields({
   onAddNext,
 }: {
   db: RDashDatabase;
+  workRequiredId?: string;
   site?: Pick<Site, "id" | "name">;
   areas: WorkRequiredArea[];
   value: WorkRequiredFormDraft;
@@ -89,9 +94,35 @@ export function WorkRequiredFields({
   const [newAreaNotes, setNewAreaNotes] = React.useState("");
   const lockedAreas = new Set(lockedAreaIds);
   const effectiveAreaIds = new Set([...value.areaIds, ...lockedAreaIds]);
-  const onChange = (patch: Partial<WorkRequiredFormDraft>) => onDraftChange(patch.areaIds
-    ? { ...patch, areaIds: [...new Set([...patch.areaIds, ...lockedAreaIds])] }
-    : patch);
+  const onChange = (patch: Partial<WorkRequiredFormDraft>) => {
+    if (!patch.areaIds) return onDraftChange(patch);
+    const areaIds = [...new Set([...patch.areaIds, ...lockedAreaIds])];
+    onDraftChange({
+      ...patch,
+      areaIds,
+      ...(value.structuredItems ? { structuredItems: value.structuredItems.filter((item) => !item.area_id || areaIds.includes(item.area_id)) } : {}),
+    });
+  };
+  const structuredItems = value.structuredItems || [];
+  const updateStructuredItems = (items: LineItem[]) => onDraftChange({ structuredItems: items });
+  const updateDetailedWork = (itemId: string, nextItem: LineItem) => {
+    const nextItems = structuredItems.map((item) => item.id === itemId ? nextItem : item);
+    const pairs = itemOptionPairs(nextItem);
+    const subcategoryIds = [...new Set([...value.subcategoryIds, ...pairs.flatMap((pair) => pair.subcategory_id ? [pair.subcategory_id] : [])])];
+    const workTypeIds = [...new Set([...value.workTypeIds, ...pairs.flatMap((pair) => pair.work_type_id ? [pair.work_type_id] : [])])];
+    const categoryIds = [...new Set([
+      ...value.categoryIds,
+      ...(nextItem.category_id ? [nextItem.category_id] : []),
+      ...db.master.workSubcategories.filter((row) => subcategoryIds.includes(row.id)).flatMap(workSubcategoryCategoryIds),
+    ])];
+    onDraftChange({
+      structuredItems: nextItems,
+      categoryIds,
+      subcategoryIds,
+      workTypeIds,
+      title: workRequiredTitleFromSelection(db.master.workSubcategories, subcategoryIds, workTypeIds),
+    });
+  };
   const categories = db.master.workCategories.filter((row) => isActiveWorkTaxonomy(row) || value.categoryIds.includes(row.id));
   const subcategories = db.master.workSubcategories.filter((row) =>
     workSubcategoryCategoryIds(row).some((id) => value.categoryIds.includes(id))
@@ -207,6 +238,40 @@ export function WorkRequiredFields({
     setCustomAreaTypes((current) => [...current.filter((row) => row.value !== value), { value, label }]);
     setNewAreaTypes((current) => [...new Set([...current, value])]);
     setCustomAreaType("");
+  };
+
+  const addDetailedWork = (area: WorkRequiredArea) => {
+    const seeds = seedDetailedAreaLines({
+      siteWorks: [{
+        id: "draft-work-required",
+        work_subcategory_ids: value.subcategoryIds,
+        work_type_ids: value.workTypeIds,
+        area_ids: [area.id],
+        structured_items: structuredItems,
+      }],
+      workSubcategories: db.master.workSubcategories,
+    });
+    const seed = seeds.find((row) => row.area_id === area.id);
+    const item = createCustomerDetailedWorkItem({
+      db,
+      area,
+      siteId: site?.id,
+      workRequiredId,
+      categoryId: seed?.category_id || value.categoryIds[0],
+      subcategoryId: seed?.subcategory_id,
+      workTypeId: seed?.work_type_id,
+      optionPairs: seed?.option_pairs,
+    });
+    updateStructuredItems([...structuredItems, item]);
+  };
+
+  const updateAreaDimensions = (area: WorkRequiredArea, patch: WorkRequiredAreaPatch) => {
+    onUpdateArea?.(area.id, patch);
+    if (!value.structuredItems) return;
+    const nextArea = { ...area, ...patch };
+    updateStructuredItems(structuredItems.map((item) => item.area_id === area.id
+      ? normalizeCustomerDetailedWorkItem(db, nextArea, item, { recomputeQuantity: true })
+      : item));
   };
 
   return (
@@ -426,8 +491,26 @@ export function WorkRequiredFields({
                       breadth: area.breadth ? String(area.breadth) : area.width ? String(area.width) : "",
                       height: area.height ? String(area.height) : "",
                     }}
-                    onChange={(dimensions) => onUpdateArea?.(area.id, dimensions)}
+                    onChange={(dimensions) => updateAreaDimensions(area, dimensions)}
                   />
+                  {value.structuredItems !== undefined ? <div className="mt-3 space-y-2 border-t border-border/70 pt-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase text-muted-foreground">Captured details</p>
+                        <p className="text-[10px] text-muted-foreground">Category, work type and measurement stay synchronized with detailed-area capture.</p>
+                      </div>
+                      <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-[11px]" onClick={() => addDetailedWork(area)}><Plus className="mr-1 h-3 w-3" />Add planned work</Button>
+                    </div>
+                    {structuredItems.filter((item) => item.area_id === area.id).map((item) => <CustomerDetailedWorkItemFields
+                      key={item.id}
+                      db={db}
+                      area={area}
+                      item={item}
+                      onChange={(nextItem) => updateDetailedWork(item.id, nextItem)}
+                      onRemove={() => updateStructuredItems(structuredItems.filter((row) => row.id !== item.id))}
+                    />)}
+                    {!structuredItems.some((item) => item.area_id === area.id) ? <p className="rounded-md border border-dashed border-border px-2.5 py-2 text-[11px] text-muted-foreground">No captured work for this Area yet. Add planned work to capture the same details here.</p> : null}
+                  </div> : null}
                 </div> : null}
               </div>
             ))}
