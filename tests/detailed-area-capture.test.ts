@@ -35,7 +35,9 @@ describe("canonical Customer site / Area / Work Required workflow", () => {
     expect(fields).toContain("renderItemDetails");
     expect(fields).toContain("capturedItemsForWorkType");
     expect(fields).toContain("Captured measurement for");
-    expect(fields).toContain("Quantity pending · add it under a Covered Area.");
+    expect(fields).toContain("Select a Covered Area to add its quantity here.");
+    expect(fields).toContain("const missingItems = seeds.flatMap");
+    expect(fields).toContain("structuredItems: [...structuredItems, ...missingItems]");
   });
 
   test("Customer owns the one rich detailed-area implementation", async () => {
@@ -201,3 +203,4 @@ describe("detailed-area seed and reconciliation primitives", () => {
     expect(reconciled.area_ids).toEqual(["area-rooftop"]);
   });
 });
+
