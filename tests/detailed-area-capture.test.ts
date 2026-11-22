@@ -64,7 +64,7 @@ describe("canonical Customer site / Area / Work Required workflow", () => {
     expect(portfolio).not.toContain("measuredQuantity");
   });
 
-  test("capture renders Add/Edit Customer selections as a read-only nested hierarchy", async () => {
+  test("capture changes work types through the shared Customer selection", async () => {
     const capture = await source("src/components/rdash/customer/CustomerWorkCaptureDialog.tsx");
     expect(capture).toContain("pairsForLine");
     expect(capture).toContain("option_pairs");
@@ -75,7 +75,10 @@ describe("canonical Customer site / Area / Work Required workflow", () => {
     expect(capture).toContain("toggleWorkTreeNode");
     expect(capture).toContain("h-40 overflow-y-auto");
     expect(capture).toContain("md:grid-cols-[minmax(0,3fr)_minmax(14rem,2fr)]");
-    expect(capture).toContain("Read-only");
+    expect(capture).toContain("changeLineWorkType");
+    expect(capture).toContain("Select work type");
+    expect(capture).toContain("saving keeps Customer Edit, Work Execution, and related views in sync");
+    expect(capture).toContain('aria-label={`${selected ? "Selected" : "Change to"}');
     expect(capture).toContain("measurementHeadline");
     expect(capture).toContain("Measurement for");
     expect(capture).toContain("Add the work selection in Add/Edit Customer first.");
@@ -198,5 +201,25 @@ describe("detailed-area seed and reconciliation primitives", () => {
     expect(reconciled.work_type_ids).toEqual(["wt-ss-standard"]);
     expect(reconciled.area_ids).toEqual(["area-rooftop"]);
   });
-});
 
+  test("reconciliation replaces a planned work type everywhere with the freshly captured type", () => {
+    const premiumWorkSubcategories = workSubcategories.map((subcategory) => subcategory.id === "sub-glass"
+      ? { ...subcategory, work_types: [...subcategory.work_types, { id: "wt-glass-premium", name: "Premium", unit_id: "rft" }] }
+      : subcategory);
+    const reconciled = reconcileWorkRequiredSelection({
+      workSubcategories: premiumWorkSubcategories,
+      work: { ...work, work_subcategory_ids: ["sub-glass"], work_type_ids: ["wt-glass-standard"] },
+      keptItems: [],
+      freshItems: [{ area_id: "area-rooftop", subcategory_id: "sub-glass", work_type_id: "wt-glass-premium" }],
+      droppedSelections: [{
+        work_required_id: work.id,
+        area_id: "area-rooftop",
+        subcategory_id: "sub-glass",
+        work_type_id: "wt-glass-standard",
+      }],
+    });
+    expect(reconciled.work_subcategory_ids).toEqual(["sub-glass"]);
+    expect(reconciled.work_type_ids).toEqual(["wt-glass-premium"]);
+    expect(reconciled.area_ids).toEqual(["area-rooftop"]);
+  });
+});
