@@ -69,10 +69,13 @@ describe("canonical Customer site / Area / Work Required workflow", () => {
     expect(capture).toContain("pairsForLine");
     expect(capture).toContain("option_pairs");
     expect(capture).toContain("itemScopeKeys");
-    expect(capture).toContain("Selected in Add/Edit Customer");
+    expect(capture).toContain("Catalogue hierarchy · selected in Add/Edit Customer");
     expect(capture).toContain("Work selection from Add/Edit Customer");
     expect(capture).toContain('role="tree"');
-    expect(capture).toContain("Change work selection there");
+    expect(capture).toContain("toggleWorkTreeNode");
+    expect(capture).toContain("h-40 overflow-y-auto");
+    expect(capture).toContain("md:grid-cols-[minmax(0,3fr)_minmax(14rem,2fr)]");
+    expect(capture).toContain("Read-only");
     expect(capture).toContain("Add the work selection in Add/Edit Customer first.");
     expect(capture).not.toContain("addAlternative");
     expect(capture).not.toContain("removeAlternative");
