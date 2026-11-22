@@ -76,6 +76,8 @@ describe("canonical Customer site / Area / Work Required workflow", () => {
     expect(capture).toContain("h-40 overflow-y-auto");
     expect(capture).toContain("md:grid-cols-[minmax(0,3fr)_minmax(14rem,2fr)]");
     expect(capture).toContain("Read-only");
+    expect(capture).toContain("measurementHeadline");
+    expect(capture).toContain("Measurement for");
     expect(capture).toContain("Add the work selection in Add/Edit Customer first.");
     expect(capture).not.toContain("addAlternative");
     expect(capture).not.toContain("removeAlternative");
