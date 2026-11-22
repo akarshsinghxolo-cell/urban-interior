@@ -513,6 +513,13 @@ export function CustomerWorkCaptureDialog({
           })),
       }))
       .filter(({ subcategories }) => subcategories.length > 0);
+    const measurementHeadline = pairs.map((pair) => {
+      const subcategory = db.master.workSubcategories.find((row) => row.id === pair.subcategory_id);
+      const workType = pair.work_type_id && subcategory
+        ? workTypesForSubcategory(subcategory).find((row) => row.id === pair.work_type_id)
+        : undefined;
+      return `${subcategory?.name || "Selected work"} > ${workType?.name || "Default"}`;
+    }).join(" / ") || "Selected work";
     const issue = lineIssue(group, line);
     const duplicate = duplicateLineKeys.has(line.key);
     const estimate = lineEstimate(line);
@@ -577,6 +584,10 @@ export function CustomerWorkCaptureDialog({
             </div>
           </div>
           <div className="grid content-start gap-3 rounded-md border border-border bg-card p-2.5">
+            <div className="border-b border-border pb-2">
+              <p className="text-[10px] font-semibold uppercase text-muted-foreground">Measurement for</p>
+              <p className="mt-0.5 text-sm font-semibold leading-5 text-foreground">{measurementHeadline}</p>
+            </div>
             <label className="grid gap-1 text-[10px] font-semibold uppercase text-muted-foreground">{WORK_MEASURE_LABELS[line.measure]}
               <Input type="number" min="0" step="any" inputMode="decimal" value={line.quantity} onChange={(event) => updateLine(group.key, line.key, { quantity: event.target.value })} className="h-8 text-xs font-normal" placeholder="Auto from Area dimensions" />
             </label>
