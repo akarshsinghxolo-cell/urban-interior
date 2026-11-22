@@ -19,6 +19,7 @@ import {
   measuredQuantity,
   seedDetailedAreaLines,
   WORK_MEASURE_LABELS,
+  isActiveWorkTaxonomy,
   workTypesForSubcategory,
   type RemovedSelection,
   type WorkMeasureBasis,
@@ -217,6 +218,12 @@ export function CustomerWorkCaptureDialog({
   }, [areas, db.master.workSubcategories, existingItems, siteWorks]);
 
   const [groups, setGroups] = React.useState<AreaGroup[]>(buildGroups);
+  const [expandedWorkTree, setExpandedWorkTree] = React.useState<Record<string, boolean>>({});
+
+  const toggleWorkTreeNode = (key: string, defaultOpen: boolean) => setExpandedWorkTree((current) => ({
+    ...current,
+    [key]: !(current[key] ?? defaultOpen),
+  }));
 
   const updateGroup = (key: string, patch: Partial<AreaGroup>) => setGroups((current) => current.map((group) => {
     if (group.key !== key) return group;
@@ -485,27 +492,27 @@ export function CustomerWorkCaptureDialog({
 
   const renderLine = (group: AreaGroup, line: DraftLine) => {
     const pairs = pairsForLine(line);
-    const hierarchy = new Map<string, {
-      categoryName: string;
-      subcategories: Map<string, { name: string; workTypes: string[] }>;
-    }>();
-    for (const pair of pairs) {
+    const selectedPairKeys = new Set(pairs.map((pair) => `${pair.subcategory_id}::${pair.work_type_id || ""}`));
+    const selectedSubcategoryIds = new Set(pairs.map((pair) => pair.subcategory_id));
+    const selectedCategoryIds = new Set(pairs.flatMap((pair) => {
       const subcategory = db.master.workSubcategories.find((row) => row.id === pair.subcategory_id);
-      const categoryId = line.category_id || (subcategory ? workSubcategoryCategoryIds(subcategory)[0] : undefined) || "unassigned";
-      const categoryName = db.master.workCategories.find((row) => row.id === categoryId)?.name || "Work";
-      const category = hierarchy.get(categoryId) || { categoryName, subcategories: new Map() };
-      const subcategoryEntry = category.subcategories.get(pair.subcategory_id) || {
-        name: subcategory?.name || "Selected work",
-        workTypes: [],
-      };
-      const workTypeName = pair.work_type_id && subcategory
-        ? workTypesForSubcategory(subcategory).find((row) => row.id === pair.work_type_id)?.name
-        : undefined;
-      const label = workTypeName || "Default";
-      if (!subcategoryEntry.workTypes.includes(label)) subcategoryEntry.workTypes.push(label);
-      category.subcategories.set(pair.subcategory_id, subcategoryEntry);
-      hierarchy.set(categoryId, category);
-    }
+      return subcategory ? workSubcategoryCategoryIds(subcategory) : [];
+    }));
+    if (line.category_id) selectedCategoryIds.add(line.category_id);
+    const catalogueHierarchy = db.master.workCategories
+      .filter((category) => isActiveWorkTaxonomy(category) || selectedCategoryIds.has(category.id))
+      .map((category) => ({
+        category,
+        subcategories: db.master.workSubcategories
+          .filter((subcategory) => workSubcategoryCategoryIds(subcategory).includes(category.id)
+            && (isActiveWorkTaxonomy(subcategory) || selectedSubcategoryIds.has(subcategory.id)))
+          .map((subcategory) => ({
+            subcategory,
+            workTypes: workTypesForSubcategory(subcategory).filter((workType) =>
+              isActiveWorkTaxonomy(workType) || selectedPairKeys.has(`${subcategory.id}::${workType.id}`)),
+          })),
+      }))
+      .filter(({ subcategories }) => subcategories.length > 0);
     const issue = lineIssue(group, line);
     const duplicate = duplicateLineKeys.has(line.key);
     const estimate = lineEstimate(line);
@@ -526,37 +533,57 @@ export function CustomerWorkCaptureDialog({
           {line.editOfItemId && <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => removeDraftLine(group.key, line.key)} aria-label="Cancel editing captured work"><X className="h-3.5 w-3.5" /></Button>}
         </div>
 
-        <div className="rounded-md border border-border bg-muted/20 p-2.5" aria-label="Work selection from Add/Edit Customer">
-          <div className="flex flex-wrap items-center justify-between gap-1">
-            <p className="text-[10px] font-semibold uppercase text-muted-foreground">Selected in Add/Edit Customer</p>
-            <p className="text-[10px] text-muted-foreground">Change work selection there</p>
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,3fr)_minmax(14rem,2fr)]">
+          <div className="h-40 overflow-y-auto rounded-md border border-border bg-muted/20 p-2.5" aria-label="Work selection from Add/Edit Customer">
+            <div className="flex flex-wrap items-center justify-between gap-1">
+              <p className="text-[10px] font-semibold uppercase text-muted-foreground">Catalogue hierarchy · selected in Add/Edit Customer</p>
+              <p className="text-[10px] text-muted-foreground">Read-only</p>
+            </div>
+            <div className="mt-2 space-y-1" role="tree">
+              {catalogueHierarchy.map(({ category, subcategories }) => {
+                const categoryKey = `${line.key}:category:${category.id}`;
+                const categorySelected = selectedCategoryIds.has(category.id);
+                const categoryOpen = expandedWorkTree[categoryKey] ?? categorySelected;
+                return <div key={category.id} role="treeitem" aria-expanded={categoryOpen} aria-selected={categorySelected}>
+                  <button type="button" onClick={() => toggleWorkTreeNode(categoryKey, categorySelected)} className={cn("flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-xs font-semibold hover:bg-accent", categorySelected ? "text-success" : "text-foreground")}>
+                    <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-primary transition-transform", !categoryOpen && "-rotate-90")} />{category.name}
+                  </button>
+                  {categoryOpen && <div className="ml-2 mt-0.5 space-y-0.5 border-l border-border pl-3" role="group">
+                    {subcategories.map(({ subcategory, workTypes }) => {
+                      const subcategoryKey = `${line.key}:subcategory:${subcategory.id}`;
+                      const subcategorySelected = selectedSubcategoryIds.has(subcategory.id);
+                      const subcategoryOpen = expandedWorkTree[subcategoryKey] ?? subcategorySelected;
+                      const showDefault = selectedPairKeys.has(`${subcategory.id}::`);
+                      return <div key={subcategory.id} role="treeitem" aria-expanded={subcategoryOpen} aria-selected={subcategorySelected}>
+                        <button type="button" onClick={() => toggleWorkTreeNode(subcategoryKey, subcategorySelected)} className={cn("relative flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-[11px] font-medium before:absolute before:-left-3 before:top-1/2 before:w-2 before:border-t before:border-border hover:bg-accent", subcategorySelected ? "text-success" : "text-foreground")}>
+                          <ChevronDown className={cn("h-3 w-3 shrink-0 text-muted-foreground transition-transform", !subcategoryOpen && "-rotate-90")} />{subcategory.name}
+                        </button>
+                        {subcategoryOpen && <div className="ml-2 mt-0.5 space-y-0.5 border-l border-border pl-3" role="group">
+                          {(showDefault || workTypes.length === 0) && <div role="treeitem" aria-selected={showDefault} className={cn("relative flex items-center gap-1.5 py-0.5 text-[11px] before:absolute before:-left-3 before:top-1/2 before:w-2 before:border-t before:border-border", showDefault ? "font-medium text-success" : "text-muted-foreground")}>
+                            {showDefault ? <CheckCircle2 className="h-3 w-3" /> : <span className="h-2.5 w-2.5 rounded-full border border-muted-foreground/50" />}Default
+                          </div>}
+                          {workTypes.map((workType) => {
+                            const selected = selectedPairKeys.has(`${subcategory.id}::${workType.id}`);
+                            return <div key={workType.id} role="treeitem" aria-selected={selected} className={cn("relative flex items-center gap-1.5 py-0.5 text-[11px] before:absolute before:-left-3 before:top-1/2 before:w-2 before:border-t before:border-border", selected ? "font-medium text-success" : "text-muted-foreground")}>
+                              {selected ? <CheckCircle2 className="h-3 w-3" /> : <span className="h-2.5 w-2.5 rounded-full border border-muted-foreground/50" />}{workType.name}
+                            </div>;
+                          })}
+                        </div>}
+                      </div>;
+                    })}
+                  </div>}
+                </div>;
+              })}
+            </div>
           </div>
-          <div className="mt-2 space-y-2" role="tree">
-            {[...hierarchy.entries()].map(([categoryId, category]) => (
-              <div key={categoryId} role="treeitem" aria-expanded="true" aria-selected="false">
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground"><ChevronDown className="h-3.5 w-3.5 text-primary" />{category.categoryName}</div>
-                <div className="ml-1.5 mt-1 space-y-1 border-l border-border pl-4" role="group">
-                  {[...category.subcategories.entries()].map(([subcategoryId, subcategory]) => (
-                    <div key={subcategoryId} role="treeitem" aria-expanded="true" aria-selected="false">
-                      <div className="relative text-[11px] font-medium text-foreground before:absolute before:-left-4 before:top-1/2 before:w-3 before:border-t before:border-border">{subcategory.name}</div>
-                      <div className="ml-1.5 mt-1 space-y-1 border-l border-border pl-4" role="group">
-                        {subcategory.workTypes.map((workType) => <div key={workType} role="treeitem" aria-selected="false" className="relative flex items-center gap-1.5 text-[11px] text-muted-foreground before:absolute before:-left-4 before:top-1/2 before:w-3 before:border-t before:border-border"><CheckCircle2 className="h-3 w-3 text-success" />{workType}</div>)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
+          <div className="grid content-start gap-3 rounded-md border border-border bg-card p-2.5">
+            <label className="grid gap-1 text-[10px] font-semibold uppercase text-muted-foreground">{WORK_MEASURE_LABELS[line.measure]}
+              <Input type="number" min="0" step="any" inputMode="decimal" value={line.quantity} onChange={(event) => updateLine(group.key, line.key, { quantity: event.target.value })} className="h-8 text-xs font-normal" placeholder="Auto from Area dimensions" />
+            </label>
+            <label className="grid gap-1 text-[10px] font-semibold uppercase text-muted-foreground">Notes
+              <Input value={line.notes || ""} onChange={(event) => updateLine(group.key, line.key, { notes: event.target.value })} className="h-8 text-xs font-normal" placeholder="Finish, preference, openings, deductions or scope note" />
+            </label>
           </div>
-        </div>
-
-        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <label className="grid gap-1 text-[10px] font-semibold uppercase text-muted-foreground">{WORK_MEASURE_LABELS[line.measure]}
-            <Input type="number" min="0" step="any" inputMode="decimal" value={line.quantity} onChange={(event) => updateLine(group.key, line.key, { quantity: event.target.value })} className="h-8 text-xs font-normal" placeholder="Auto from Area dimensions" />
-          </label>
-          <label className="grid gap-1 text-[10px] font-semibold uppercase text-muted-foreground">Notes
-            <Input value={line.notes || ""} onChange={(event) => updateLine(group.key, line.key, { notes: event.target.value })} className="h-8 text-xs font-normal" placeholder="Finish, preference, openings, deductions or scope note" />
-          </label>
         </div>
 
         <p className="mt-2 text-[10px] text-muted-foreground">
