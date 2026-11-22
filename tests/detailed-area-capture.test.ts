@@ -4,6 +4,7 @@ import type { LineItem } from "../src/lib/rdash/types";
 import {
   capturedItemsForWorkType,
   reconcileWorkRequiredSelection,
+  replaceDetailedWorkSelection,
   seedDetailedAreaLines,
 } from "../src/lib/rdash/work-types";
 
@@ -76,6 +77,7 @@ describe("canonical Customer site / Area / Work Required workflow", () => {
     expect(capture).toContain("h-40 overflow-y-auto");
     expect(capture).toContain("md:grid-cols-[minmax(0,3fr)_minmax(14rem,2fr)]");
     expect(capture).toContain("changeLineWorkType");
+    expect(capture).toContain("replaceDetailedWorkSelection");
     expect(capture).toContain("Select work type");
     expect(capture).toContain("saving keeps Customer Edit, Work Execution, and related views in sync");
     expect(capture).toContain('aria-label={`${selected ? "Selected" : "Change to"}');
@@ -85,6 +87,7 @@ describe("canonical Customer site / Area / Work Required workflow", () => {
     expect(capture).not.toContain("addAlternative");
     expect(capture).not.toContain("removeAlternative");
     expect(capture).not.toContain("makeAlternativePrimary");
+    expect(capture).not.toContain("disabled={!subcategorySelected || selected}");
     expect(capture).not.toContain("MEASURE_OPTIONS");
     expect(capture).not.toContain(">Add work</Button>");
   });
@@ -143,6 +146,54 @@ describe("detailed-area seed and reconciliation primitives", () => {
     area_ids: ["area-rooftop"],
     structured_items: [],
   } as any;
+
+  test("changes a planned selection to another category without keeping invalid alternatives", () => {
+    const replaced = replaceDetailedWorkSelection({
+      currentCategoryId: "cat-railing",
+      currentPairs: [
+        { subcategory_id: "sub-glass", work_type_id: "wt-glass-standard" },
+        { subcategory_id: "sub-ss", work_type_id: "wt-ss-standard" },
+      ],
+      nextCategoryId: "cat-paint",
+      nextSubcategoryId: "sub-paint",
+      nextWorkTypeId: "wt-paint-standard",
+    });
+
+    expect(replaced.nextPairs).toEqual([{ subcategory_id: "sub-paint", work_type_id: "wt-paint-standard" }]);
+    expect(replaced.removedPairs).toHaveLength(2);
+
+    const reconciled = reconcileWorkRequiredSelection({
+      workSubcategories: [
+        ...workSubcategories,
+        { id: "sub-paint", category_id: "cat-paint", name: "Interior Paint", unit_id: "sqft", work_types: [{ id: "wt-paint-standard", name: "Standard", unit_id: "sqft" }] },
+      ] as any,
+      work,
+      keptItems: [],
+      freshItems: replaced.nextPairs.map((pair) => ({ area_id: "area-rooftop", ...pair })),
+      droppedSelections: replaced.removedPairs.map((pair) => ({ work_required_id: work.id, area_id: "area-rooftop", ...pair })),
+    });
+    expect(reconciled.work_subcategory_ids).toEqual(["sub-paint"]);
+    expect(reconciled.work_type_ids).toEqual(["wt-paint-standard"]);
+  });
+
+  test("changes one option inside the same category and keeps the other alternatives", () => {
+    const replaced = replaceDetailedWorkSelection({
+      currentCategoryId: "cat-railing",
+      currentPairs: [
+        { subcategory_id: "sub-glass", work_type_id: "wt-glass-standard" },
+        { subcategory_id: "sub-ss", work_type_id: "wt-ss-standard" },
+      ],
+      nextCategoryId: "cat-railing",
+      nextSubcategoryId: "sub-glass",
+      nextWorkTypeId: "wt-glass-premium",
+    });
+
+    expect(replaced.nextPairs).toEqual([
+      { subcategory_id: "sub-glass", work_type_id: "wt-glass-premium" },
+      { subcategory_id: "sub-ss", work_type_id: "wt-ss-standard" },
+    ]);
+    expect(replaced.removedPairs).toEqual([{ subcategory_id: "sub-glass", work_type_id: "wt-glass-standard" }]);
+  });
 
   test("groups alternative work types into one measured seed", () => {
     const seeds = seedDetailedAreaLines({ siteWorks: [work], workSubcategories });

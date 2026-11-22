@@ -17,6 +17,7 @@ import {
   defaultMeasureBasisFor,
   itemScopeKeys,
   measuredQuantity,
+  replaceDetailedWorkSelection,
   seedDetailedAreaLines,
   WORK_MEASURE_LABELS,
   isActiveWorkTaxonomy,
@@ -264,17 +265,23 @@ export function CustomerWorkCaptureDialog({
     };
   }));
 
-  const changeLineWorkType = (groupKey: string, lineKey: string, subcategoryId: string, workTypeId?: string) => setGroups((current) => current.map((group) => {
+  const changeLineWorkType = (groupKey: string, lineKey: string, categoryId: string, subcategoryId: string, workTypeId?: string) => setGroups((current) => current.map((group) => {
     if (group.key !== groupKey) return group;
     const line = group.lines.find((candidate) => candidate.key === lineKey);
     if (!line) return group;
     const pairs = pairsForLine(line);
-    const pairIndex = pairs.findIndex((pair) => pair.subcategory_id === subcategoryId);
-    if (pairIndex < 0 || pairs[pairIndex].work_type_id === workTypeId) return group;
+    const replacement = replaceDetailedWorkSelection({
+      currentCategoryId: line.category_id,
+      currentPairs: pairs,
+      nextCategoryId: categoryId,
+      nextSubcategoryId: subcategoryId,
+      nextWorkTypeId: workTypeId,
+    });
+    if (!replacement.changed) return group;
 
-    const previousPair = pairs[pairIndex];
-    const nextPair = { subcategory_id: subcategoryId, work_type_id: workTypeId };
-    const nextPairs = pairs.map((pair, index) => index === pairIndex ? nextPair : pair);
+    const { nextPairs, removedPairs } = replacement;
+    const nextMeasure = measureFor(subcategoryId);
+    const nextMeasured = measuredQuantity(nextMeasure, dimensions(group), line.walls);
     const targetWorkRequiredId = line.target_work_required_id || workRequired.id;
     const targetWork = siteWorks.find((row) => row.id === targetWorkRequiredId);
     const areaId = group.area_id;
@@ -282,17 +289,20 @@ export function CustomerWorkCaptureDialog({
       && row.area_id === areaId
       && row.subcategory_id === pair.subcategory_id
       && (row.work_type_id || "") === (pair.work_type_id || "");
-    const removedSelections = group.removedSelections.filter((row) => !matchesSelection(row, nextPair));
-    if (line.seeded && areaId && targetWork
-      && (targetWork.work_subcategory_ids || []).includes(previousPair.subcategory_id)
-      && (!previousPair.work_type_id || (targetWork.work_type_ids || []).includes(previousPair.work_type_id))
-      && !removedSelections.some((row) => matchesSelection(row, previousPair))) {
-      removedSelections.push({
-        work_required_id: targetWorkRequiredId,
-        area_id: areaId,
-        subcategory_id: previousPair.subcategory_id,
-        work_type_id: previousPair.work_type_id,
-      });
+    const removedSelections = group.removedSelections.filter((row) => !nextPairs.some((pair) => matchesSelection(row, pair)));
+    if (line.seeded && areaId && targetWork) {
+      for (const previousPair of removedPairs) {
+        if ((targetWork.work_subcategory_ids || []).includes(previousPair.subcategory_id)
+          && (!previousPair.work_type_id || (targetWork.work_type_ids || []).includes(previousPair.work_type_id))
+          && !removedSelections.some((row) => matchesSelection(row, previousPair))) {
+          removedSelections.push({
+            work_required_id: targetWorkRequiredId,
+            area_id: areaId,
+            subcategory_id: previousPair.subcategory_id,
+            work_type_id: previousPair.work_type_id,
+          });
+        }
+      }
     }
 
     return {
@@ -300,9 +310,14 @@ export function CustomerWorkCaptureDialog({
       removedSelections,
       lines: group.lines.map((candidate) => candidate.key === lineKey ? {
         ...candidate,
+        category_id: categoryId,
         subcategory_id: nextPairs[0].subcategory_id,
         work_type_id: nextPairs[0].work_type_id,
         option_pairs: nextPairs.length > 1 ? nextPairs : undefined,
+        measure: nextMeasure,
+        quantity: candidate.manualQuantity
+          ? candidate.quantity
+          : nextMeasured.quantity > 0 ? String(round(nextMeasured.quantity)) : "",
       } : candidate),
     };
   }));
@@ -609,12 +624,12 @@ export function CustomerWorkCaptureDialog({
                           <ChevronDown className={cn("h-3 w-3 shrink-0 text-muted-foreground transition-transform", !subcategoryOpen && "-rotate-90")} />{subcategory.name}
                         </button>
                         {subcategoryOpen && <div className="ml-2 mt-0.5 space-y-0.5 border-l border-border pl-3" role="group">
-                          {(showDefault || workTypes.length === 0) && <button type="button" role="treeitem" aria-selected={showDefault} disabled={!subcategorySelected || showDefault} onClick={() => changeLineWorkType(group.key, line.key, subcategory.id)} className={cn("relative flex w-full items-center gap-1.5 rounded py-0.5 text-left text-[11px] before:absolute before:-left-3 before:top-1/2 before:w-2 before:border-t before:border-border", showDefault ? "font-medium text-success" : subcategorySelected ? "text-foreground hover:bg-accent" : "cursor-default text-muted-foreground")}>
+                          {(showDefault || workTypes.length === 0) && <button type="button" role="treeitem" aria-selected={showDefault} disabled={showDefault} onClick={() => changeLineWorkType(group.key, line.key, category.id, subcategory.id)} className={cn("relative flex w-full items-center gap-1.5 rounded py-0.5 text-left text-[11px] before:absolute before:-left-3 before:top-1/2 before:w-2 before:border-t before:border-border", showDefault ? "font-medium text-success" : "text-foreground hover:bg-accent")}>
                             {showDefault ? <CheckCircle2 className="h-3 w-3" /> : <span className="h-2.5 w-2.5 rounded-full border border-muted-foreground/50" />}Default
                           </button>}
                           {workTypes.map((workType) => {
                             const selected = selectedPairKeys.has(`${subcategory.id}::${workType.id}`);
-                            return <button key={workType.id} type="button" role="treeitem" aria-selected={selected} aria-label={`${selected ? "Selected" : "Change to"} ${subcategory.name} > ${workType.name}`} disabled={!subcategorySelected || selected} onClick={() => changeLineWorkType(group.key, line.key, subcategory.id, workType.id)} className={cn("relative flex w-full items-center gap-1.5 rounded py-0.5 text-left text-[11px] before:absolute before:-left-3 before:top-1/2 before:w-2 before:border-t before:border-border", selected ? "font-medium text-success" : subcategorySelected ? "text-foreground hover:bg-accent" : "cursor-default text-muted-foreground")}>
+                            return <button key={workType.id} type="button" role="treeitem" aria-selected={selected} aria-label={`${selected ? "Selected" : "Change to"} ${subcategory.name} > ${workType.name}`} disabled={selected} onClick={() => changeLineWorkType(group.key, line.key, category.id, subcategory.id, workType.id)} className={cn("relative flex w-full items-center gap-1.5 rounded py-0.5 text-left text-[11px] before:absolute before:-left-3 before:top-1/2 before:w-2 before:border-t before:border-border", selected ? "font-medium text-success" : "text-foreground hover:bg-accent")}>
                               {selected ? <CheckCircle2 className="h-3 w-3" /> : <span className="h-2.5 w-2.5 rounded-full border border-muted-foreground/50" />}{workType.name}
                             </button>;
                           })}
