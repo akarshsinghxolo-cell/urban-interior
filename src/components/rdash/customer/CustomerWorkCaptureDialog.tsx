@@ -264,6 +264,49 @@ export function CustomerWorkCaptureDialog({
     };
   }));
 
+  const changeLineWorkType = (groupKey: string, lineKey: string, subcategoryId: string, workTypeId?: string) => setGroups((current) => current.map((group) => {
+    if (group.key !== groupKey) return group;
+    const line = group.lines.find((candidate) => candidate.key === lineKey);
+    if (!line) return group;
+    const pairs = pairsForLine(line);
+    const pairIndex = pairs.findIndex((pair) => pair.subcategory_id === subcategoryId);
+    if (pairIndex < 0 || pairs[pairIndex].work_type_id === workTypeId) return group;
+
+    const previousPair = pairs[pairIndex];
+    const nextPair = { subcategory_id: subcategoryId, work_type_id: workTypeId };
+    const nextPairs = pairs.map((pair, index) => index === pairIndex ? nextPair : pair);
+    const targetWorkRequiredId = line.target_work_required_id || workRequired.id;
+    const targetWork = siteWorks.find((row) => row.id === targetWorkRequiredId);
+    const areaId = group.area_id;
+    const matchesSelection = (row: RemovedSelection, pair: OptionPair) => row.work_required_id === targetWorkRequiredId
+      && row.area_id === areaId
+      && row.subcategory_id === pair.subcategory_id
+      && (row.work_type_id || "") === (pair.work_type_id || "");
+    const removedSelections = group.removedSelections.filter((row) => !matchesSelection(row, nextPair));
+    if (line.seeded && areaId && targetWork
+      && (targetWork.work_subcategory_ids || []).includes(previousPair.subcategory_id)
+      && (!previousPair.work_type_id || (targetWork.work_type_ids || []).includes(previousPair.work_type_id))
+      && !removedSelections.some((row) => matchesSelection(row, previousPair))) {
+      removedSelections.push({
+        work_required_id: targetWorkRequiredId,
+        area_id: areaId,
+        subcategory_id: previousPair.subcategory_id,
+        work_type_id: previousPair.work_type_id,
+      });
+    }
+
+    return {
+      ...group,
+      removedSelections,
+      lines: group.lines.map((candidate) => candidate.key === lineKey ? {
+        ...candidate,
+        subcategory_id: nextPairs[0].subcategory_id,
+        work_type_id: nextPairs[0].work_type_id,
+        option_pairs: nextPairs.length > 1 ? nextPairs : undefined,
+      } : candidate),
+    };
+  }));
+
   const removeDraftLine = (groupKey: string, lineKey: string) => setGroups((current) => current.map((group) => {
     if (group.key !== groupKey) return group;
     const line = group.lines.find((candidate) => candidate.key === lineKey);
@@ -544,7 +587,7 @@ export function CustomerWorkCaptureDialog({
           <div className="h-40 overflow-y-auto rounded-md border border-border bg-muted/20 p-2.5" aria-label="Work selection from Add/Edit Customer">
             <div className="flex flex-wrap items-center justify-between gap-1">
               <p className="text-[10px] font-semibold uppercase text-muted-foreground">Catalogue hierarchy · selected in Add/Edit Customer</p>
-              <p className="text-[10px] text-muted-foreground">Read-only</p>
+              <p className="text-[10px] font-medium text-primary">Select work type</p>
             </div>
             <div className="mt-2 space-y-1" role="tree">
               {catalogueHierarchy.map(({ category, subcategories }) => {
@@ -566,14 +609,14 @@ export function CustomerWorkCaptureDialog({
                           <ChevronDown className={cn("h-3 w-3 shrink-0 text-muted-foreground transition-transform", !subcategoryOpen && "-rotate-90")} />{subcategory.name}
                         </button>
                         {subcategoryOpen && <div className="ml-2 mt-0.5 space-y-0.5 border-l border-border pl-3" role="group">
-                          {(showDefault || workTypes.length === 0) && <div role="treeitem" aria-selected={showDefault} className={cn("relative flex items-center gap-1.5 py-0.5 text-[11px] before:absolute before:-left-3 before:top-1/2 before:w-2 before:border-t before:border-border", showDefault ? "font-medium text-success" : "text-muted-foreground")}>
+                          {(showDefault || workTypes.length === 0) && <button type="button" role="treeitem" aria-selected={showDefault} disabled={!subcategorySelected || showDefault} onClick={() => changeLineWorkType(group.key, line.key, subcategory.id)} className={cn("relative flex w-full items-center gap-1.5 rounded py-0.5 text-left text-[11px] before:absolute before:-left-3 before:top-1/2 before:w-2 before:border-t before:border-border", showDefault ? "font-medium text-success" : subcategorySelected ? "text-foreground hover:bg-accent" : "cursor-default text-muted-foreground")}>
                             {showDefault ? <CheckCircle2 className="h-3 w-3" /> : <span className="h-2.5 w-2.5 rounded-full border border-muted-foreground/50" />}Default
-                          </div>}
+                          </button>}
                           {workTypes.map((workType) => {
                             const selected = selectedPairKeys.has(`${subcategory.id}::${workType.id}`);
-                            return <div key={workType.id} role="treeitem" aria-selected={selected} className={cn("relative flex items-center gap-1.5 py-0.5 text-[11px] before:absolute before:-left-3 before:top-1/2 before:w-2 before:border-t before:border-border", selected ? "font-medium text-success" : "text-muted-foreground")}>
+                            return <button key={workType.id} type="button" role="treeitem" aria-selected={selected} aria-label={`${selected ? "Selected" : "Change to"} ${subcategory.name} > ${workType.name}`} disabled={!subcategorySelected || selected} onClick={() => changeLineWorkType(group.key, line.key, subcategory.id, workType.id)} className={cn("relative flex w-full items-center gap-1.5 rounded py-0.5 text-left text-[11px] before:absolute before:-left-3 before:top-1/2 before:w-2 before:border-t before:border-border", selected ? "font-medium text-success" : subcategorySelected ? "text-foreground hover:bg-accent" : "cursor-default text-muted-foreground")}>
                               {selected ? <CheckCircle2 className="h-3 w-3" /> : <span className="h-2.5 w-2.5 rounded-full border border-muted-foreground/50" />}{workType.name}
-                            </div>;
+                            </button>;
                           })}
                         </div>}
                       </div>;
@@ -617,7 +660,7 @@ export function CustomerWorkCaptureDialog({
         </div>
 
         <div className="rd-scroll max-h-[60vh] space-y-2 overflow-y-auto overflow-x-hidden px-5 py-4">
-          <p className="text-xs text-muted-foreground">Every Site Area reuses one L/B/H source. Work selection and measurement basis come from Add/Edit Customer; capture only confirms the calculated quantity and notes.</p>
+          <p className="text-xs text-muted-foreground">Every Site Area reuses one L/B/H source. Choose a work type here or in Add/Edit Customer; saving keeps Customer Edit, Work Execution, and related views in sync. Capture also confirms the calculated quantity and notes.</p>
           <EntityFilesCard entityType="workRequired" entityId={workRequired.id} title="Requirement files" manage allowDetach={false} registerBatch={registerBatch} />
 
           {groups.map((group) => {
@@ -695,4 +738,3 @@ export function CustomerWorkCaptureDialog({
     </div>
   );
 }
-
