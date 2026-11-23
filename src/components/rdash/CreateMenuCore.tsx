@@ -7,13 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 import { notifyCreated, notifyConverted } from "@/lib/rdash/notify";
 import { useRDashStore, type CreateDialogKind, type CreateDialogRequest } from "@/lib/rdash/store";
-import type { VisitType } from "@/lib/rdash/types";
+import type { RDashDatabase, VisitType } from "@/lib/rdash/types";
 import { indiaDateTimeInputValue } from "@/lib/rdash/format";
-import { workRequiredCategoryIds, workTypeNamesForIds } from "@/lib/rdash/work-types";
-import { Plus, ListPlus, FilePlus2, MapPinPlus, PhoneCall, Check, } from "lucide-react";
+import { Plus, ListPlus, FilePlus2, MapPinPlus, PhoneCall, Check, ChevronDown, } from "lucide-react";
 const CREATE_OPTIONS: {
     kind: CreateDialogKind;
     label: string;
@@ -98,6 +98,83 @@ export function CreateMenu({ showTrigger = true, enableHotkeys = showTrigger, }:
       {createDialog && <CreateDialog request={createDialog} onClose={closeCreateDialog}/>}
     </>);
 }
+
+function VisitCustomerSitePicker({ customers, sites, customerId, siteId, onSelect }: {
+    customers: RDashDatabase["customers"];
+    sites: RDashDatabase["sites"];
+    customerId: string;
+    siteId: string;
+    onSelect: (customerId: string, siteId: string) => void;
+}) {
+    const [open, setOpen] = React.useState(false);
+    const [query, setQuery] = React.useState("");
+    const [sortOrder, setSortOrder] = React.useState<"az" | "za">("az");
+    const [siteFilter, setSiteFilter] = React.useState<"all" | "one" | "multiple" | "none">("all");
+    const [expandedCustomerId, setExpandedCustomerId] = React.useState("");
+    const selectedCustomer = customers.find((customer) => customer.id === customerId);
+    const selectedSite = sites.find((site) => site.id === siteId);
+    const rows = React.useMemo(() => customers.map((customer) => {
+        const customerSites = sites.filter((site) => site.customer_id === customer.id && !site.is_archived);
+        return { customer, customerSites };
+    }).filter(({ customer, customerSites }) => {
+        const needle = query.trim().toLowerCase();
+        const matchesQuery = !needle || [customer.name, ...customerSites.flatMap((site) => [site.name, site.city, site.locality])]
+            .filter(Boolean).some((value) => String(value).toLowerCase().includes(needle));
+        const matchesFilter = siteFilter === "all"
+            || (siteFilter === "one" && customerSites.length === 1)
+            || (siteFilter === "multiple" && customerSites.length > 1)
+            || (siteFilter === "none" && customerSites.length === 0);
+        return matchesQuery && matchesFilter;
+    }).sort((a, b) => {
+        const comparison = a.customer.name.localeCompare(b.customer.name, "en", { sensitivity: "base" });
+        return sortOrder === "az" ? comparison : -comparison;
+    }), [customers, query, siteFilter, sites, sortOrder]);
+
+    return <Field label="Customer / Site *">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button type="button" variant="outline" role="combobox" aria-expanded={open} className="h-10 w-full justify-between px-3 font-normal">
+            <span className="truncate">{selectedCustomer ? `${selectedCustomer.name}${selectedSite ? ` · ${selectedSite.name}` : " · choose site"}` : "Select customer and site…"}</span>
+            <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-[420px] max-w-[calc(100vw-2rem)] p-0">
+          <div className="grid grid-cols-[minmax(0,1fr)_5.5rem_6.5rem] gap-1 border-b border-border p-2">
+            <Input aria-label="Search customers or sites" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search customers or sites…" className="h-8" autoFocus />
+            <select aria-label="Sort customers" value={sortOrder} onChange={(event) => setSortOrder(event.target.value as "az" | "za")} className="h-8 rounded-md border border-input bg-card px-2 text-xs">
+              <option value="az">A–Z</option><option value="za">Z–A</option>
+            </select>
+            <select aria-label="Filter customers" value={siteFilter} onChange={(event) => setSiteFilter(event.target.value as typeof siteFilter)} className="h-8 rounded-md border border-input bg-card px-2 text-xs">
+              <option value="all">All sites</option><option value="multiple">Multi-site</option><option value="one">One site</option><option value="none">No site</option>
+            </select>
+          </div>
+          <div className="max-h-72 overflow-y-auto p-1" role="listbox" aria-label="Customers and sites">
+            {rows.map(({ customer, customerSites }) => {
+                const expanded = expandedCustomerId === customer.id;
+                return <div key={customer.id} className="rounded-md">
+                  <button type="button" disabled={!customerSites.length} aria-expanded={customerSites.length > 1 ? expanded : undefined} className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50" onClick={() => {
+                      if (customerSites.length === 1) {
+                          onSelect(customer.id, customerSites[0].id);
+                          setOpen(false);
+                      } else if (customerSites.length > 1) setExpandedCustomerId(expanded ? "" : customer.id);
+                  }}>
+                    <span className="min-w-0"><span className="block truncate font-medium">{customer.name}</span><span className="block truncate text-[11px] text-muted-foreground">{customerSites.length ? `${customerSites.length} site${customerSites.length === 1 ? "" : "s"}${customerSites[0]?.city ? ` · ${customerSites[0].city}` : ""}` : "No active site"}</span></span>
+                    {customerSites.length > 1 && <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />}
+                  </button>
+                  {expanded && <div className="mb-1 ml-5 border-l border-border pl-2">
+                    {customerSites.map((site) => <button type="button" key={site.id} role="option" aria-selected={site.id === siteId} className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs hover:bg-accent" onClick={() => { onSelect(customer.id, site.id); setOpen(false); }}>
+                      <span className="truncate">{site.name}{site.locality ? ` · ${site.locality}` : ""}</span>{site.id === siteId && <Check className="ml-2 h-3.5 w-3.5 shrink-0 text-primary" />}
+                    </button>)}
+                  </div>}
+                </div>;
+            })}
+            {!rows.length && <p className="px-3 py-6 text-center text-xs text-muted-foreground">No matching customers or sites.</p>}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </Field>;
+}
+
 function CreateDialog({ request, onClose }: {
     request: CreateDialogRequest;
     onClose: () => void;
@@ -148,13 +225,9 @@ function CreateDialog({ request, onClose }: {
     const [visitAssignee, setVisitAssignee] = React.useState(defaultVisitAssignee);
     const [dueDate, setDueDate] = React.useState(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date(Date.now() + 86400000)));
     const [visitScheduledAt, setVisitScheduledAt] = React.useState(() => indiaDateTimeInputValue(new Date(Date.now() + 86400000)));
-    const [visitDuration, setVisitDuration] = React.useState("60");
     const [followupDueAt, setFollowupDueAt] = React.useState(() => indiaDateTimeInputValue(new Date(Date.now() + 86400000)));
-    const [visitType, setVisitType] = React.useState<VisitType>("site_visit");
+    const visitType: VisitType = prefillVisitType || "site_visit";
     const [visitSiteId, setVisitSiteId] = React.useState("");
-    const [visitTargetType, setVisitTargetType] = React.useState<"site" | "vendor">("site");
-    const [visitVendorId, setVisitVendorId] = React.useState("");
-    const [visitWorkRequiredId, setVisitWorkRequiredId] = React.useState("");
     const [followupType, setFollowupType] = React.useState<"call" | "quotation" | "payment" | "general">("call");
     const [submitting, setSubmitting] = React.useState(false);
     React.useEffect(() => {
@@ -167,12 +240,8 @@ function CreateDialog({ request, onClose }: {
         setDueDate(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date(Date.now() + 86400000)));
         setVisitScheduledAt(indiaDateTimeInputValue(new Date(Date.now() + 86400000)));
         setFollowupDueAt(indiaDateTimeInputValue(new Date(Date.now() + 86400000)));
-        setVisitDuration("60");
-        setVisitSiteId(prefillSiteId || "");
-        setVisitTargetType("site");
-        setVisitVendorId("");
-        setVisitWorkRequiredId(prefillWorkRequiredId || "");
-        setVisitType(prefillVisitType || "site_visit");
+        const customerSites = db.sites.filter((site) => site.customer_id === prefillCustomerId && !site.is_archived);
+        setVisitSiteId(prefillSiteId || (customerSites.length === 1 ? customerSites[0].id : ""));
     }, [defaultAssignee, defaultVisitAssignee, kind, prefillCustomerId, prefillSiteId, prefillVisitType, prefillWorkRequiredId]);
     const handleSubmit = () => {
         setSubmitting(true);
@@ -222,22 +291,6 @@ function CreateDialog({ request, onClose }: {
                     setSubmitting(false);
                     return;
                 }
-                const vendor = visitTargetType === "vendor" ? db.master.vendors.find((row) => row.id === visitVendorId) : undefined;
-                if (visitTargetType === "vendor" && !vendor) {
-                    toast.error("Select the registered Vendor location");
-                    setSubmitting(false);
-                    return;
-                }
-                if (visitTargetType === "vendor" && (vendor!.latitude == null || vendor!.longitude == null)) {
-                    toast.error("Capture GPS coordinates for this Vendor before scheduling an automatic geofence Visit");
-                    setSubmitting(false);
-                    return;
-                }
-                if (visitTargetType === "vendor" && visitType === "measurement") {
-                    toast.error("A Measurement Visit must use the selected customer Site, not a Vendor location");
-                    setSubmitting(false);
-                    return;
-                }
                 const [assigneeTypeRaw, assigneeIdRaw] = selectedVisitAssignee.value.split(":") as [
                     "staff" | "contractor",
                     string
@@ -245,18 +298,7 @@ function CreateDialog({ request, onClose }: {
                 const isUnassigned = assigneeIdRaw === "unassigned";
                 const assigneeType = isUnassigned ? "staff" : assigneeTypeRaw;
                 const assigneeId = isUnassigned ? "" : assigneeIdRaw;
-                const selectedWorkRequiredId = visitWorkRequiredId === "none" ? "" : visitWorkRequiredId;
-                if (visitType === "measurement" && !selectedWorkRequiredId) {
-                    toast.error("Select the Work Required being measured");
-                    setSubmitting(false);
-                    return;
-                }
-                const workRequired = selectedWorkRequiredId ? db.workRequired.find((row) => row.id === visitWorkRequiredId && row.customer_id === customerId && row.site_id === site.id) : undefined;
-                if (visitWorkRequiredId && !workRequired) {
-                    toast.error("The selected Work Required no longer belongs to this customer site");
-                    setSubmitting(false);
-                    return;
-                }
+                const workRequired = prefillWorkRequiredId ? db.workRequired.find((row) => row.id === prefillWorkRequiredId && row.customer_id === customerId && row.site_id === site.id) : undefined;
                 const id = addVisit({
                     customer_id: customerId,
                     site_id: site.id,
@@ -266,15 +308,13 @@ function CreateDialog({ request, onClose }: {
                     contractor_name: assigneeType === "contractor" ? selectedVisitAssignee.name : undefined,
                     work_required_id: workRequired?.id,
                     visit_type: visitType,
-                    location_target_type: visitTargetType,
-                    vendor_id: vendor?.id,
-                    vendor_name: vendor?.name,
-                    location_name: visitTargetType === "vendor" ? (vendor?.address || vendor?.name || "Vendor") : (site.address || site.name),
+                    location_target_type: "site",
+                    location_name: site.address || site.name,
                     status: "scheduled",
                     scheduled_at: visitScheduledAt,
-                    scheduled_duration_minutes: Math.max(15, Number(visitDuration) || 60),
-                    planned_latitude: visitTargetType === "vendor" ? vendor?.latitude : site.latitude,
-                    planned_longitude: visitTargetType === "vendor" ? vendor?.longitude : site.longitude,
+                    planned_latitude: site.latitude,
+                    planned_longitude: site.longitude,
+                    notes: description.trim(),
                 });
                 addRecentCreated({ id, kind: "visit", label: `${visitType.replace("_", " ")} · ${site.name}` });
                 notifyCreated("visit", id, `${visitType.replace("_", " ")} visit`, `Scheduled for ${cust?.name || "customer"} · ${site.name} · ${visitScheduledAt}`);
@@ -358,64 +398,11 @@ function CreateDialog({ request, onClose }: {
             </>)}
 
           {kind === "visit" && (<>
-              <Field label="Customer *">
-                <Select value={customerId} onValueChange={(value) => { setCustomerId(value); setVisitSiteId(""); setVisitWorkRequiredId(""); }}>
-                  <SelectTrigger><SelectValue placeholder="Select customer…"/></SelectTrigger>
-                  <SelectContent>
-                    {customers.map((c) => { const site = db.sites.find((entry) => entry.customer_id === c.id); return <SelectItem key={c.id} value={c.id}>{c.name}{site?.city ? ` · ${site.city}` : ""}</SelectItem>; })}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="Site *">
-                <Select value={visitSiteId} onValueChange={(value) => { setVisitSiteId(value); setVisitWorkRequiredId(""); }} disabled={!customerId}>
-                  <SelectTrigger><SelectValue placeholder={customerId ? "Select customer site…" : "Select customer first"}/></SelectTrigger>
-                  <SelectContent>
-                    {db.sites.filter((site) => site.customer_id === customerId && !site.is_archived).map((site) => <SelectItem key={site.id} value={site.id}>{site.name}{site.locality ? ` · ${site.locality}` : ""}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="Geofence destination *">
-                <Select value={visitTargetType} onValueChange={(value) => { setVisitTargetType(value as "site" | "vendor"); setVisitVendorId(""); }}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="site">Customer Site</SelectItem><SelectItem value="vendor">Registered Vendor location</SelectItem></SelectContent>
-                </Select>
-              </Field>
-              {visitTargetType === "vendor" && (<Field label="Vendor location *">
-                  <Select value={visitVendorId} onValueChange={setVisitVendorId}>
-                    <SelectTrigger><SelectValue placeholder="Select vendor with GPS…"/></SelectTrigger>
-                    <SelectContent>{db.master.vendors.map((vendor) => <SelectItem key={vendor.id} value={vendor.id}>{vendor.name}{vendor.city ? ` · ${vendor.city}` : ""}{vendor.latitude == null || vendor.longitude == null ? " · GPS required" : ""}</SelectItem>)}</SelectContent>
-                  </Select>
-                </Field>)}
-              <Field label={visitType === "measurement" ? "Work Required for measurement *" : "Work Required (optional)"}>
-                <Select value={visitWorkRequiredId} onValueChange={setVisitWorkRequiredId} disabled={!visitSiteId || visitTargetType === "vendor"}>
-                  <SelectTrigger><SelectValue placeholder={visitTargetType === "vendor" ? "Vendor Visits do not use Site measurement scope" : visitSiteId ? "Select site work requirement…" : "Select Site first"}/></SelectTrigger>
-                  <SelectContent>
-                    {visitType !== "measurement" && <SelectItem value="none">No linked Work Required</SelectItem>}
-                    {db.workRequired.filter((work) => work.customer_id === customerId && work.site_id === visitSiteId).map((work) => {
-                        const areaNames = work.area_ids.map((areaId) => db.areas.find((area) => area.id === areaId)?.name).filter(Boolean).join(", ");
-                        const categories = workRequiredCategoryIds(db.master.workSubcategories, work).map((id) => db.master.workCategories.find((row) => row.id === id)?.name).filter(Boolean);
-                        const subcategories = (work.work_subcategory_ids || []).map((id) => db.master.workSubcategories.find((row) => row.id === id)?.name).filter(Boolean);
-                        const workTypes = workTypeNamesForIds(db.master.workSubcategories, work.work_type_ids);
-                        const scope = [categories.join(" / ") || work.title, subcategories.join(" / "), workTypes.join(" / ")].filter(Boolean).join(" · ");
-                        return <SelectItem key={work.id} value={work.id}>{areaNames || "Site-wide"} → {scope}</SelectItem>;
-                    })}
-                  </SelectContent>
-                </Select>
+              <VisitCustomerSitePicker customers={customers} sites={db.sites} customerId={customerId} siteId={visitSiteId} onSelect={(nextCustomerId, nextSiteId) => { setCustomerId(nextCustomerId); setVisitSiteId(nextSiteId); }} />
+              <Field label="Notes">
+                <Textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Purpose, instructions, or access notes…" rows={3} className="resize-none" />
               </Field>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Visit type">
-                  <Select value={visitType} onValueChange={(v) => setVisitType(v as typeof visitType)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="measurement">Measurement</SelectItem>
-                      <SelectItem value="site_visit">Site visit</SelectItem>
-                      <SelectItem value="delivery">Delivery</SelectItem>
-                      <SelectItem value="collection">Collection</SelectItem>
-                      <SelectItem value="inspection">Inspection</SelectItem>
-                      <SelectItem value="handover">Handover</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
                 <Field label="Assignee">
                   <Select value={visitAssignee} onValueChange={setVisitAssignee}>
                     <SelectTrigger><SelectValue placeholder="Select staff or contractor..."/></SelectTrigger>
@@ -426,12 +413,9 @@ function CreateDialog({ request, onClose }: {
                     </SelectContent>
                   </Select>
                 </Field>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
                 <Field label="Scheduled date & time"><Input type="datetime-local" value={visitScheduledAt} onChange={(e) => setVisitScheduledAt(e.target.value)}/></Field>
-                <Field label="Duration (minutes)"><Input type="number" min="15" step="15" value={visitDuration} onChange={(e) => setVisitDuration(e.target.value)}/></Field>
               </div>
-              <p className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">The assigned person cannot be scheduled into an overlapping Visit. Automatic geofence check-in/out uses the selected Customer Site or registered Vendor GPS while the app is open; Manual buttons remain available if automation cannot run.</p>
+              <p className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">The selected Customer Site supplies the geofence automatically. GPS check-in and check-out calculate the actual time spent on site; manual buttons remain available if automation cannot run.</p>
             </>)}
 
           {kind === "followup" && (<>
@@ -508,4 +492,5 @@ function Field({ label, children }: {
       {children}
     </div>);
 }
+
 
