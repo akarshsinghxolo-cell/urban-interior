@@ -505,9 +505,9 @@ export function WorkRequiredFields({
         ) : null}
         {lockedAreaIds.length ? <p className="mt-1 flex items-center gap-1 text-[10px] text-emerald-700 dark:text-emerald-300"><LockKeyhole className="h-3 w-3" />Quoted Areas stay selected here because quotations and customer work use the same coverage.</p> : null}
         {areas.length ? (
-          <div className="mt-1 grid max-h-72 grid-cols-1 gap-2 overflow-y-auto rounded-md border border-border p-2">
+          <div className="mt-1 grid max-h-72 grid-cols-1 gap-2 overflow-y-auto rounded-md border border-border p-2 md:grid-cols-2 lg:grid-cols-3">
             {areas.map((area) => (
-              <div key={area.id} role="group" aria-label={`Area ${area.name}`} className="rounded border border-border/70 px-2 py-2 text-xs">
+              <div key={area.id} role="group" aria-label={`Area ${area.name}`} className="min-w-0 rounded border border-border/70 px-2 py-2 text-xs">
                 <div className="flex items-center gap-1">
                   <input
                     type="checkbox"
