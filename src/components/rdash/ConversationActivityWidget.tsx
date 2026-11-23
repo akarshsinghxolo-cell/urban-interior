@@ -13,7 +13,7 @@ import { MessagesSquare, AtSign, CheckCircle2, Paperclip, Info, TrendingUp, Arro
  * - A 7-day message activity bar chart (mini sparkline style)
  * - Counts by message kind (comments, decisions, mentions, proofs, system)
  * - The most recently active threads (top 3)
- * - A "view all" link to the Thread Inbox
+ * - A "view all" link to the Conversation Inbox
  */
 export function ConversationActivityWidget({ onOpenInbox }: { onOpenInbox?: () => void }) {
     const db = useRDashStore((s) => s.db);

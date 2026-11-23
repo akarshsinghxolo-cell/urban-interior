@@ -39,7 +39,6 @@ const PaymentRecoveryModule = React.lazy(() => import("./modules/PaymentRecovery
 const ReportsModule = React.lazy(() => import("./modules/ReportsModule").then((module) => ({ default: module.ReportsModule })));
 const ReportFamilyModule = React.lazy(() => import("./modules/ReportFamilyModule").then((module) => ({ default: module.ReportFamilyModule })));
 const CalendarModule = React.lazy(() => import("./modules/CalendarModule").then((module) => ({ default: module.CalendarModule })));
-const SiteMeasurementModule = React.lazy(() => import("./modules/SiteMeasurementModule").then((module) => ({ default: module.SiteMeasurementModule })));
 const ApprovalPoliciesModule = React.lazy(() => import("./modules/ApprovalPoliciesModule").then((module) => ({ default: module.ApprovalPoliciesModule })));
 const ControlBrainModule = React.lazy(() => import("./modules/ControlBrainModule").then((module) => ({ default: module.ControlBrainModule })));
 const AuditLogModule = React.lazy(() => import("./modules/AuditLogModule").then((module) => ({ default: module.AuditLogModule })));
@@ -201,7 +200,6 @@ function WorkspaceModuleRouter({ moduleId }: { moduleId: string }) {
         case "reports-v2": return <ReportsModule reportId={activeModuleId}/>;
         case "report-family": return <ReportFamilyModule family={(route.filter?.family || "sales") as "sales" | "collections" | "operations" | "financial"}/>;
         case "calendar": return route.filter?.view === "recurring" ? <CalendarRecurringCombined /> : <CalendarModule />;
-        case "site-measurement": return <SiteMeasurementModule />;
         case "approval-policies": return <ApprovalPoliciesModule />;
         case "control-brain": return <ControlBrainModule />;
         case "audit-log": return <AuditLogModule />;
@@ -219,7 +217,7 @@ function WorkspaceModuleRouter({ moduleId }: { moduleId: string }) {
         case "sales-pipeline": return <CustomerDesk initialView="pipeline" />;
         case "lost-closed-review": return <LostClosedReviewModule />;
         case "commissions": return <CommissionsWorkspaceModule />;
-        case "unified-thread-inbox": return <UnifiedThreadInboxModule />;
+        case "unified-thread-inbox": return <UnifiedThreadInboxModule mode={route.filter?.view === "conversation" ? "conversation" : "timeline"} />;
         case "masters": return <WorkCategoryMasterModule initialView="catalogue"/>;
         case "article-variants": return <ArticleVariantsModule />;
         case "masters-v2": return activeModuleId === "vendorRates" ? <VendorPriceMasterModule /> : <MastersModule submodule={route.filter?.sub || activeModuleId}/>;

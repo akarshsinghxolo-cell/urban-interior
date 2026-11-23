@@ -88,11 +88,7 @@ for (const width of [320, 390]) {
         const panel = await openModule(page, canonicalPath);
         await expectContentFits(panel);
         if (canonicalPath === "/workspace/media/drive") {
-          const mobileSessions = panel.getByTestId("resumable-sessions-mobile").first();
-          if (await mobileSessions.count()) {
-            await expect(mobileSessions).toBeVisible();
-            await expect(panel.getByTestId("resumable-sessions-table").first()).toBeHidden();
-          }
+          await expect(panel.getByText("Resumable sessions", { exact: true })).toHaveCount(0);
         }
         for (const view of views[canonicalPath] || []) {
           await panel.getByRole("button", { name: view, exact: true }).click();

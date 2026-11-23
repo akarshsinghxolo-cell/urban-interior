@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { formatBytes } from "@/lib/rdash/format";
+import { formatBytes, formatDateTime } from "@/lib/rdash/format";
 import { AlertCircle, CheckCircle2, CloudOff, File, RefreshCw, Trash2, UploadCloud } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -15,10 +15,26 @@ import { reserveEntityId, type UploadItemRecord } from "@/lib/uploads/upload-typ
 export function PendingUploadsPanel() {
   const queue = useUploadQueue();
   const role = useRDashStore((state) => state.authUser?.role || "Unauthenticated");
+  const fileAssets = useRDashStore((state) => state.db.master.fileAssets);
+  const customers = useRDashStore((state) => state.db.customers);
+  const sites = useRDashStore((state) => state.db.sites);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const pendingItems = queue.items.filter((item) => !item.deferred && item.status !== "completed" && item.status !== "cancelled");
   const missingFileItems = pendingItems.filter((item) => item.status === "failed_permanent" && item.lastErrorCode === "FILE_MISSING" && !item.googleFileId && !item.sessionUri);
   const batchMap = new Map(queue.batches.map((batch) => [batch.id, batch]));
+  const recentUploads = React.useMemo(() => {
+    const customerById = new Map(customers.map((customer) => [customer.id, customer]));
+    const siteById = new Map(sites.map((site) => [site.id, site]));
+    return [...(fileAssets || [])]
+      .filter((asset) => asset.status === "active" && asset.sync_status === "uploaded")
+      .sort((left, right) => Date.parse(right.updated_at || right.created_at) - Date.parse(left.updated_at || left.created_at))
+      .slice(0, 8)
+      .map((asset) => {
+        const site = asset.site_id ? siteById.get(asset.site_id) : undefined;
+        const customer = customerById.get(asset.customer_id || site?.customer_id || "");
+        return { asset, context: [customer?.name, site?.name].filter(Boolean).join(" · ") || "Workspace file" };
+      });
+  }, [customers, fileAssets, sites]);
 
   const queueDiagnosticUpload = async (files: FileList | null) => {
     const selected = Array.from(files || []);
@@ -106,6 +122,32 @@ export function PendingUploadsPanel() {
           })}
         </div>
       )}
+
+      <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm" aria-label="Recent uploads">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+          <div>
+            <h3 className="flex items-center gap-2 text-sm font-bold"><CheckCircle2 className="h-4 w-4 text-success" /> Recent uploads</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">The latest files successfully saved to the workspace.</p>
+          </div>
+          {recentUploads.length ? <span className="text-[11px] font-medium text-muted-foreground">Latest {recentUploads.length}</span> : null}
+        </div>
+        {recentUploads.length ? (
+          <div className="divide-y divide-border">
+            {recentUploads.map(({ asset, context }) => (
+              <div key={asset.id} className="flex items-start gap-3 px-4 py-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-success/10 text-success"><File className="h-4 w-4" /></span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold" title={asset.file_name}>{asset.file_name}</p>
+                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={context}>{formatDateTime(asset.updated_at || asset.created_at)} · {context}{asset.file_size_bytes ? ` · ${formatBytes(asset.file_size_bytes)}` : ""}</p>
+                </div>
+                <span className="shrink-0 rounded-full bg-success/10 px-2 py-1 text-[10px] font-semibold text-success">Saved</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="px-4 py-6 text-center text-xs text-muted-foreground">No completed uploads yet.</p>
+        )}
+      </section>
     </div>
   );
 }

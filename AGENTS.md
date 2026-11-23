@@ -27,6 +27,7 @@ For each engineering task:
 ## Git and deployment policy
 
 - Direct edits and commits to `main` are authorized and may be used as the default workflow.
+- Vercel releases must target production directly. Do not create preview deployments for this project.
 - Inspect the current `main` state before writing so unrelated work is not overwritten.
 - Use a separate branch or pull request only when it materially improves safety, reviewability, rollback, or parallel development.
 - Production deployment does not require a separate approval when it is a natural part of completing the requested task.

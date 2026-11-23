@@ -59,8 +59,8 @@ describe("Customer Desk restored-feature contracts", () => {
       "editOfItemId",
       "scrollEditDraftIntoView",
       "option_pairs",
-      "addAlternative",
-      "removeAlternative",
+      "changeLineWorkType",
+      "Select work type",
       "incomplete/duplicate row(s) left untouched",
       "flex items-end justify-center",
     ]) expect(capture).toContain(token);

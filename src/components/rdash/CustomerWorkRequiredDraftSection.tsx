@@ -60,7 +60,7 @@ export function CustomerWorkRequiredDraftSection({
   const [expandedIds, setExpandedIds] = React.useState<Set<string>>(() => new Set(workRequired.filter((draft) => !draft.existing).map((draft) => draft.id)));
 
   const appendDraft = (draft: CustomerWorkRequiredDraft) => {
-    setWorkRequired((current) => [...current, draft]);
+    setWorkRequired((current) => [draft, ...current]);
     setExpandedIds((current) => new Set(current).add(draft.id));
   };
 
@@ -118,7 +118,7 @@ export function CustomerWorkRequiredDraftSection({
   };
 
   return (
-    <section className="space-y-3 border-t border-border pt-4">
+    <section className="space-y-4 border-t border-border pt-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Wrench className="h-4 w-4 text-primary" />
@@ -140,7 +140,10 @@ export function CustomerWorkRequiredDraftSection({
         const displayNumber = draft.existing ? index + 1 : Math.max(existingCount, visibleWorkRequired.filter((row) => row.existing).length) + visibleWorkRequired.slice(0, index + 1).filter((row) => !row.existing).length;
         const expanded = expandedIds.has(draft.id);
         return (
-          <article key={draft.id} className="rounded-lg border border-border p-3">
+          <article
+            key={draft.id}
+            className={`rounded-xl border p-3 shadow-sm ${index % 2 === 0 ? "border-primary/20 bg-primary/[0.025]" : "border-border bg-muted/20"}`}
+          >
             <div className={expanded ? "mb-3 flex items-start gap-2" : "flex items-start gap-2"}>
               <Button
                 type="button"
@@ -163,7 +166,7 @@ export function CustomerWorkRequiredDraftSection({
               </div>
               <select
                 value={draft.siteId}
-                onChange={(event) => updateWorkRequired(draft.id, { siteId: event.target.value, areaIds: [] })}
+                onChange={(event) => updateWorkRequired(draft.id, { siteId: event.target.value, areaIds: [], structuredItems: [] })}
                 disabled={draft.existing && Boolean(draft.siteId)}
                 className="h-8 w-auto min-w-0 max-w-full shrink basis-28 rounded-md border border-input bg-card px-2 text-xs"
                 aria-label={`Customer or Site for Work Required ${displayNumber}`}
@@ -184,6 +187,7 @@ export function CustomerWorkRequiredDraftSection({
             </div>
             {expanded ? <WorkRequiredFields
               db={db}
+              workRequiredId={draft.id}
               site={site}
               areas={siteAreas}
               value={draft}
@@ -197,7 +201,11 @@ export function CustomerWorkRequiredDraftSection({
               onUpdateArea={(areaId, patch) => setAreas((current) => current.map((area) => area.id === areaId ? { ...area, ...patch } : area))}
               onDeleteArea={(areaId) => {
                 setAreas((current) => current.flatMap((area) => area.id !== areaId ? [area] : area.existing ? [{ ...area, archiveRequested: true }] : []));
-                setWorkRequired((current) => current.map((work) => ({ ...work, areaIds: work.areaIds.filter((id) => id !== areaId) })));
+                setWorkRequired((current) => current.map((work) => ({
+                  ...work,
+                  areaIds: work.areaIds.filter((id) => id !== areaId),
+                  structuredItems: work.structuredItems.filter((item) => item.area_id !== areaId),
+                })));
               }}
               onAddNext={(mode) => addFromWorkRequired(draft, mode)}
             /> : null}

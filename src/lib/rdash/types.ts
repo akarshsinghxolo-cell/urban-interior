@@ -205,6 +205,12 @@ export interface LineItem {
     breadth_ft?: number;
     height_ft?: number;
     floor_ceiling_area?: number;
+    /** Persisted UI intent for area-level work captured from Customer forms. */
+    measurement_basis?: "wall" | "floor_ceiling" | "wall_ceiling" | "length";
+    measurement_walls?: 1 | 2;
+    quantity_is_manual?: boolean;
+    /** Unsaved Add/Edit Customer marker; stripped before persistence. */
+    customer_form_draft?: boolean;
 }
 export type QuotationItem = LineItem;
 export interface QuotationExtraColumn {

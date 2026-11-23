@@ -56,6 +56,7 @@ function buildModuleScopeMap(): Map<string, ModuleWorkspaceReadScope> {
   ].forEach((id) => map.set(id, "site"));
   [
     "workdesk",
+    "conversationInbox",
     "unifiedThreadInbox",
     "tasks",
     "blockedRisks",
@@ -67,7 +68,6 @@ function buildModuleScopeMap(): Map<string, ModuleWorkspaceReadScope> {
   );
   [
     "fieldOperations",
-    "siteMeasurement",
     "visitProofs",
     "fieldMode",
     "gpsTracking",

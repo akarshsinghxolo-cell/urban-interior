@@ -141,16 +141,16 @@ export function RDashApp() {
         }
     }, [workspaceSyncStatus, workspaceSyncError]);
     // G-then-key navigation (like Slack/Gmail): press G, then a letter to jump
-    // to a module. G+I = Thread Inbox, G+D = Daily Work, G+C = Customer Desk,
+    // to a module. G+I = Conversation Inbox, G+D = Daily Work, G+C = Customer Desk,
     // G+S = Sales Pipeline, G+F = Field Visits, G+P = Procurement.
     const gSequenceRef = React.useRef<number | null>(null);
     React.useEffect(() => {
         const G_MODULE_MAP: Record<string, string> = {
-            i: "unifiedThreadInbox",
+            i: "conversationInbox",
             d: "workdesk",
             c: "customerDesk",
             s: "salesPipeline",
-            f: "siteMeasurement",
+            f: "fieldOperations",
             p: "grn",
         };
         const onKeyDown = (event: KeyboardEvent) => {

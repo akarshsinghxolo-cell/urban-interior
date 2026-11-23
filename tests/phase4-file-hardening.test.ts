@@ -17,7 +17,6 @@ const FILE_BACKED_EXACT_MODULES = [
   "blockedRisks",
   "approvals",
   "calendarRecurring",
-  "siteMeasurement",
   "visitProofs",
   "fieldMode",
   "gpsTracking",

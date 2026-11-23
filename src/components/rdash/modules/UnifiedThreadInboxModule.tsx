@@ -13,11 +13,9 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
 /**
- * Unified Thread Inbox — a single feed of every message across every thread
- * in the workspace. This is the "inbox" view of the Universal Conversation
- * Graph: comments, decisions, system events, mention backlinks, and proofs
- * from all entities (customers, sites, work orders, quotations, POs, etc.)
- * appear in one chronological stream.
+ * Two views over the same canonical thread graph:
+ * - Conversation Inbox contains human comments and replies only.
+ * - Timeline / History contains comments, decisions, system events and proofs.
  *
  * Users can:
  * - Search all messages by text
@@ -25,7 +23,7 @@ import { toast } from "sonner";
  * - Click any message to open the parent entity's detail panel
  * - See which entity/thread each message belongs to via the context badge
  */
-export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { entityTypeFilter?: string; statusFilter?: "open" | "closed" } = {}) {
+export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter, mode = "timeline" }: { entityTypeFilter?: string; statusFilter?: "open" | "closed"; mode?: "conversation" | "timeline" } = {}) {
     const db = useRDashStore((s) => s.db);
     const openDetail = useRDashStore((s) => s.openDetail);
     const [search, setSearch] = React.useState("");
@@ -33,6 +31,11 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
     const [entityType, setEntityType] = React.useState<string>(entityTypeFilter || "all");
     const [status, setStatus] = React.useState<"all" | "open" | "closed">(statusFilter || "all");
     const [selectedThreadId, setSelectedThreadId] = React.useState<string | null>(null);
+    const visibleThreads = React.useMemo(
+        () => mode === "conversation" ? db.threads.filter((thread) => thread.messages.some((message) => message.kind === "comment")) : db.threads,
+        [db.threads, mode],
+    );
+    const effectiveFilter = mode === "conversation" ? "all" : filter;
     // Pinned threads — persisted to localStorage so users can bookmark
     // important conversations for quick access.
     // STAGE-4-FIX: init empty to avoid hydration mismatch, load in useEffect
@@ -63,10 +66,10 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
     }, []);
     // Pinned threads (most recent message first).
     const pinnedThreads = React.useMemo(() => {
-        return db.threads
+        return visibleThreads
             .filter((t) => pinnedThreadIds.has(t.id))
             .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
-    }, [db.threads, pinnedThreadIds]);
+    }, [pinnedThreadIds, visibleThreads]);
 
     // Unread state — tracks the last-viewed timestamp per thread. A thread is
     // "unread" if it has messages newer than the last-viewed timestamp.
@@ -101,13 +104,13 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
         });
     }, []);
     const unreadThreadCount = React.useMemo(() => {
-        return db.threads.filter((t) => isThreadUnread(t)).length;
-    }, [db.threads, isThreadUnread]);
+        return visibleThreads.filter((t) => isThreadUnread(t)).length;
+    }, [isThreadUnread, visibleThreads]);
     const markAllRead = React.useCallback(() => {
         setLastViewedMap((prev) => {
             const next = { ...prev };
             const now = new Date().toISOString();
-            for (const t of db.threads) {
+            for (const t of visibleThreads) {
                 // Use max(now, thread.updated_at) so future-dated seeds are covered.
                 next[t.id] = t.updated_at > now ? t.updated_at : now;
             }
@@ -118,8 +121,8 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
             }
             return next;
         });
-        toast.success(`Marked all ${db.threads.length} threads as read`);
-    }, [db.threads]);
+        toast.success(`Marked all ${visibleThreads.length} threads as read`);
+    }, [visibleThreads]);
     const toggleUnread = React.useCallback((thread: Thread) => {
         setLastViewedMap((prev) => {
             const next = { ...prev };
@@ -167,9 +170,9 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
     }, []);
     const recentThreads = React.useMemo(() => {
         return recentThreadIds
-            .map((id) => db.threads.find((t) => t.id === id))
+            .map((id) => visibleThreads.find((t) => t.id === id))
             .filter((t): t is Thread => Boolean(t));
-    }, [recentThreadIds, db.threads]);
+    }, [recentThreadIds, visibleThreads]);
 
     // Flatten all messages from all threads into a single feed.
     type FeedItem = {
@@ -178,27 +181,28 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
     };
     const allFeed: FeedItem[] = React.useMemo(() => {
         const out: FeedItem[] = [];
-        for (const thread of db.threads) {
+        for (const thread of visibleThreads) {
             for (const message of thread.messages) {
+                if (mode === "conversation" && message.kind !== "comment") continue;
                 out.push({ message, thread });
             }
         }
         // Sort newest first.
         out.sort((a, b) => b.message.created_at.localeCompare(a.message.created_at));
         return out;
-    }, [db.threads]);
+    }, [mode, visibleThreads]);
 
     // Apply search + filter.
     const filteredFeed = React.useMemo(() => {
         const q = search.trim().toLowerCase();
         return allFeed.filter(({ message: m, thread }) => {
             // Kind filter.
-            if (filter !== "all") {
-                if (filter === "comment" && m.kind !== "comment") return false;
-                if (filter === "decision" && m.kind !== "decision") return false;
-                if (filter === "system" && m.kind !== "system") return false;
-                if (filter === "alert" && m.kind !== "alert") return false;
-                if (filter === "proof" && m.kind !== "proof") return false;
+            if (effectiveFilter !== "all") {
+                if (effectiveFilter === "comment" && m.kind !== "comment") return false;
+                if (effectiveFilter === "decision" && m.kind !== "decision") return false;
+                if (effectiveFilter === "system" && m.kind !== "system") return false;
+                if (effectiveFilter === "alert" && m.kind !== "alert") return false;
+                if (effectiveFilter === "proof" && m.kind !== "proof") return false;
             }
             // Entity-type filter (ThreadKind).
             if (entityType !== "all" && thread.kind !== entityType) return false;
@@ -212,7 +216,7 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
             }
             return true;
         });
-    }, [allFeed, search, filter, entityType, status]);
+    }, [allFeed, search, effectiveFilter, entityType, status]);
 
     // Count by kind for the filter pills.
     const counts = React.useMemo(() => {
@@ -228,7 +232,7 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
         return c;
     }, [allFeed]);
 
-    const filterTabs: Array<{ id: typeof filter; label: string; count: number; icon: React.ReactNode }> = [
+    const timelineFilterTabs: Array<{ id: typeof filter; label: string; count: number; icon: React.ReactNode }> = [
         { id: "all", label: "All", count: counts.all, icon: <Inbox className="h-3 w-3"/> },
         { id: "comment", label: "Chat", count: counts.comment, icon: <MessagesSquare className="h-3 w-3"/> },
         { id: "decision", label: "Decisions", count: counts.decision, icon: <CheckCircle2 className="h-3 w-3"/> },
@@ -236,12 +240,13 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
         { id: "alert", label: "Mentions", count: counts.alert, icon: <AtSign className="h-3 w-3"/> },
         { id: "proof", label: "Proofs", count: counts.proof, icon: <Paperclip className="h-3 w-3"/> },
     ];
+    const filterTabs = mode === "conversation" ? timelineFilterTabs.slice(0, 1) : timelineFilterTabs;
 
     // Recently active threads (updated in the last 24 hours) — shown as a
     // live indicator in the header so users can see how much is happening.
     const now = Date.now();
     const dayAgo = now - 24 * 60 * 60 * 1000;
-    const recentThreadCount = db.threads.filter((t) => {
+    const recentThreadCount = visibleThreads.filter((t) => {
         const updated = new Date(t.updated_at).getTime();
         return !Number.isNaN(updated) && updated > dayAgo;
     }).length;
@@ -264,12 +269,12 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
     const openThread = React.useCallback((thread: Thread) => {
         const kind = threadKindToDetailKind(thread.kind);
         if (kind) {
-            openDetail(kind, thread.record_id, "unifiedThreadInbox");
+            openDetail(kind, thread.record_id, mode === "conversation" ? "conversationInbox" : "unifiedThreadInbox");
         }
         setSelectedThreadId(thread.id);
         markThreadRead(thread.id, thread.updated_at);
         trackRecentThread(thread.id);
-    }, [markThreadRead, openDetail, trackRecentThread]);
+    }, [markThreadRead, mode, openDetail, trackRecentThread]);
     const openRequestedThread = React.useCallback((threadId: string) => {
         const requestedThread = db.threads.find((thread) => thread.id === threadId);
         if (!requestedThread)
@@ -298,10 +303,10 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
         <div className="shrink-0 border-b border-border bg-card/50 px-4 pb-3 pt-4">
             <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
                 <div className="flex min-w-0 items-center gap-2.5">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Inbox className="h-5 w-5"/></span>
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">{mode === "conversation" ? <MessagesSquare className="h-5 w-5"/> : <Clock className="h-5 w-5"/>}</span>
                     <div className="min-w-0">
                         <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-foreground">
-                            Thread Inbox
+                            {mode === "conversation" ? "Conversation Inbox" : "Timeline / History"}
                             {unreadThreadCount > 0 && (
                                 <span className="inline-flex items-center justify-center rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground" title={`${unreadThreadCount} unread thread${unreadThreadCount !== 1 ? "s" : ""}`}>
                                     {unreadThreadCount}
@@ -309,7 +314,7 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
                             )}
                         </h2>
                         <p className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                            <span className="whitespace-nowrap">{db.threads.length} threads · {allFeed.length} messages</span>
+                            <span className="whitespace-nowrap">{visibleThreads.length} threads · {allFeed.length} messages</span>
                             {recentMessageCount > 0 && (
                                 <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-success/10 px-1.5 py-0.5 text-[10px] font-semibold text-success">
                                     <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success"/>
@@ -335,8 +340,8 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
             {/* Filter pills */}
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
                 {filterTabs.map((tab) => (
-                    <button key={tab.id} type="button" onClick={() => setFilter(tab.id)} className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-medium transition-all", filter === tab.id ? "bg-primary text-primary-foreground shadow-sm" : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground")}>
-                        {tab.icon}{tab.label}<span className={cn("rounded-full px-1 text-[10px]", filter === tab.id ? "bg-primary-foreground/20" : "bg-background/70")}>{tab.count}</span>
+                    <button key={tab.id} type="button" onClick={() => setFilter(tab.id)} className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-medium transition-all", effectiveFilter === tab.id ? "bg-primary text-primary-foreground shadow-sm" : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground")}>
+                        {tab.icon}{tab.label}<span className={cn("rounded-full px-1 text-[10px]", effectiveFilter === tab.id ? "bg-primary-foreground/20" : "bg-background/70")}>{tab.count}</span>
                     </button>
                 ))}
                 {/* F. Entity-type + status filters — consolidates the old ThreadsModule
@@ -371,7 +376,7 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
 
         {/* Pinned + Recent threads bar — shows bookmarked and recently-viewed
             conversations for quick access. Only on All filter with no search. */}
-        {(pinnedThreads.length > 0 || recentThreads.length > 0) && !search && filter === "all" && (
+        {(pinnedThreads.length > 0 || recentThreads.length > 0) && !search && effectiveFilter === "all" && (
             <div className="shrink-0 border-b border-border bg-muted/20 px-4 py-2">
                 <div className="mx-auto flex max-w-3xl flex-col gap-1.5">
                     {pinnedThreads.length > 0 && (

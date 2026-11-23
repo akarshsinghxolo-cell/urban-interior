@@ -16,4 +16,11 @@ describe("location address extraction", () => {
     expect(addressLocality(address)).toBe("Civil Lines");
     expect(addressCity(address)).toBe("Gorakhpur");
   });
+
+  test("uses the segment before city when the provider repeats city as locality", () => {
+    const address = { city: "Gorakhpur", city_district: "Gorakhpur", state: "Uttar Pradesh", postcode: "273001" };
+
+    expect(addressLocality(address, "karim nagar, Gorakhpur, Uttar Pradesh, 273001, India")).toBe("karim nagar");
+    expect(addressCity(address)).toBe("Gorakhpur");
+  });
 });

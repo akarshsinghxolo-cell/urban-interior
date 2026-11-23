@@ -21,7 +21,6 @@ const EXACT_MODULES = [
   "approvals",
   "calendarRecurring",
   "quotationConfig",
-  "siteMeasurement",
   "visitProofs",
   "fieldMode",
   "gpsTracking",
@@ -130,6 +129,9 @@ describe("exact module workspace read plans", () => {
     const inbox = workspaceModuleReadPlan(workspaceReadTargetForModule("unifiedThreadInbox"));
     expect(inbox.limitsByCollection?.threads).toBeUndefined();
     expect(inbox.limitsByCollection?.customers).toBeUndefined();
+
+    const conversations = workspaceModuleReadPlan(workspaceReadTargetForModule("conversationInbox"));
+    expect(conversations.collections).toEqual(inbox.collections);
   });
 });
 

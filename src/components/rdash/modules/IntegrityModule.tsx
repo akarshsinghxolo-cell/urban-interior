@@ -109,7 +109,7 @@ const COLLECTION_TO_MODULE: Record<string, string> = {
     drawings: "drawings",
     executionLogs: "executionLogs",
     variationRequests: "siteExecution",
-    visits: "siteMeasurement",
+    visits: "fieldOperations",
     tasks: "tasks",
     followups: "tasks",
     actions: "approvals",

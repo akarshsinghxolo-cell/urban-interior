@@ -11,6 +11,7 @@ const customerSitesDialog = readFileSync("src/components/rdash/CustomerSitesDial
 const customerSiteDraftCard = readFileSync("src/components/rdash/CustomerSiteDraftCard.tsx", "utf8");
 const customerDetailsFields = readFileSync("src/components/rdash/CustomerDetailsFields.tsx", "utf8");
 const workRequiredFields = readFileSync("src/components/rdash/WorkRequiredFields.tsx", "utf8");
+const customerWorkRequiredDraftSection = readFileSync("src/components/rdash/CustomerWorkRequiredDraftSection.tsx", "utf8");
 const createMenu = readFileSync("src/components/rdash/CreateMenu.tsx", "utf8");
 const createMenuCore = readFileSync("src/components/rdash/CreateMenuCore.tsx", "utf8");
 const customerQuotationDialog = readFileSync("src/components/rdash/customer/CustomerQuotationDialog.tsx", "utf8");
@@ -62,6 +63,7 @@ test("shared Add/Edit Customer form orders Sites then editable Work Required wit
   const workRequired = customerSitesDialog.indexOf("<CustomerWorkRequiredDraftSection");
 
   expectTokens(customerSitesDialog, ['isEdit ? "Edit Customer and Sites" : "Add New Customer"']);
+  expect(customerSitesDialog).toContain("sm:max-w-[calc(100vw-2rem)] xl:max-w-6xl");
   expect(sites).toBeGreaterThanOrEqual(0);
   expect(workRequired).toBeGreaterThan(sites);
   expect(customerSitesDialog).not.toContain("CustomerWorkInterests");
@@ -70,7 +72,13 @@ test("shared Add/Edit Customer form orders Sites then editable Work Required wit
   expectNoTokens(workRequiredFields, ["suggested from this customer"]);
   expectTokens(workRequiredFields, ["+ Add category"]);
   expectTokens(workRequiredFields, ["+ Add subcategory"]);
-  expect(workRequiredFields.indexOf("Covered Areas")).toBeLessThan(workRequiredFields.indexOf("Work Categories"));
+  expect(workRequiredFields).toContain("grid gap-3 md:grid-cols-3");
+  expect(workRequiredFields.indexOf("Covered Areas")).toBeGreaterThan(workRequiredFields.indexOf("Work Categories"));
+  expect(workRequiredFields).toContain("flex flex-wrap items-center justify-start gap-2");
+  expect(workRequiredFields.indexOf("Add another using these Areas")).toBeLessThan(workRequiredFields.indexOf("Copy this requirement"));
+  expect(customerWorkRequiredDraftSection).toContain("space-y-4 border-t border-border pt-4");
+  expect(customerWorkRequiredDraftSection).toContain("border-primary/20 bg-primary/[0.025]");
+  expect(customerWorkRequiredDraftSection).toContain("border-border bg-muted/20");
   expectTokens(workRequiredFields, ['site?.name || "this Customer"']);
 
   // Quotation selection/serialization is intentionally Customer-owned. The

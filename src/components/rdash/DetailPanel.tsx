@@ -2462,7 +2462,7 @@ function VisitOverview({ v }: {
         <Field label="Scheduled" value={formatDate(v.scheduled_at)}/>
         <Field label="Check-in" value={v.check_in_at ? formatDate(v.check_in_at) : "—"}/>
         <Field label="Check-out" value={v.check_out_at ? formatDate(v.check_out_at) : "—"}/>
-        <Field label="Dwell" value={v.dwell_minutes ? `${v.dwell_minutes} min` : "—"}/>
+        <Field label="GPS duration" value={v.dwell_minutes != null ? `${v.dwell_minutes} min` : "—"}/>
         <Field label="GPS verification" value={v.check_in_verified || v.check_out_verified ? `Verified · ${v.check_in_distance_m ?? v.check_out_distance_m ?? "—"} m from Site` : "No verified field GPS"}/>
         <Field label="Report" value={v.report_filed ? "Filed" : "Pending"}/>
       </div>

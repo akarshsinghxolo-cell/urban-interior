@@ -15,10 +15,9 @@ import { formatINR } from "@/lib/rdash/format";
 import { contractorWorkTypeAverages } from "@/lib/rdash/contractor-profile";
 import {
   defaultMeasureBasisFor,
-  itemOptionPairs,
   itemScopeKeys,
   measuredQuantity,
-  promoteOptionPair,
+  replaceDetailedWorkSelection,
   seedDetailedAreaLines,
   WORK_MEASURE_LABELS,
   isActiveWorkTaxonomy,
@@ -33,7 +32,6 @@ import {
   type CustomerAreaDimensionsDraft,
 } from "./CustomerAreaDimensionsFields";
 
-const MEASURE_OPTIONS: WorkMeasureBasis[] = ["wall", "floor_ceiling", "wall_ceiling", "length"];
 const AREA_TYPES: Array<{ value: AreaType; label: string }> = [
   { value: "bedroom", label: "Bedroom" },
   { value: "guest_room", label: "Guest room" },
@@ -221,19 +219,12 @@ export function CustomerWorkCaptureDialog({
   }, [areas, db.master.workSubcategories, existingItems, siteWorks]);
 
   const [groups, setGroups] = React.useState<AreaGroup[]>(buildGroups);
+  const [expandedWorkTree, setExpandedWorkTree] = React.useState<Record<string, boolean>>({});
 
-  const freshLine = React.useCallback((group: AreaGroup): DraftLine => {
-    const measure: WorkMeasureBasis = "floor_ceiling";
-    const measured = measuredQuantity(measure, dimensions(group), 1);
-    return {
-      key: draftKey("work"),
-      target_work_required_id: workRequired.id,
-      measure,
-      walls: 1,
-      quantity: measured.quantity > 0 ? String(round(measured.quantity)) : "",
-      manualQuantity: false,
-    };
-  }, [workRequired.id]);
+  const toggleWorkTreeNode = (key: string, defaultOpen: boolean) => setExpandedWorkTree((current) => ({
+    ...current,
+    [key]: !(current[key] ?? defaultOpen),
+  }));
 
   const updateGroup = (key: string, patch: Partial<AreaGroup>) => setGroups((current) => current.map((group) => {
     if (group.key !== key) return group;
@@ -274,9 +265,62 @@ export function CustomerWorkCaptureDialog({
     };
   }));
 
-  const addLine = (groupKey: string) => setGroups((current) => current.map((group) =>
-    group.key === groupKey ? { ...group, open: true, lines: [...group.lines, freshLine(group)] } : group,
-  ));
+  const changeLineWorkType = (groupKey: string, lineKey: string, categoryId: string, subcategoryId: string, workTypeId?: string) => setGroups((current) => current.map((group) => {
+    if (group.key !== groupKey) return group;
+    const line = group.lines.find((candidate) => candidate.key === lineKey);
+    if (!line) return group;
+    const pairs = pairsForLine(line);
+    const replacement = replaceDetailedWorkSelection({
+      currentCategoryId: line.category_id,
+      currentPairs: pairs,
+      nextCategoryId: categoryId,
+      nextSubcategoryId: subcategoryId,
+      nextWorkTypeId: workTypeId,
+    });
+    if (!replacement.changed) return group;
+
+    const { nextPairs, removedPairs } = replacement;
+    const nextMeasure = measureFor(subcategoryId);
+    const nextMeasured = measuredQuantity(nextMeasure, dimensions(group), line.walls);
+    const targetWorkRequiredId = line.target_work_required_id || workRequired.id;
+    const targetWork = siteWorks.find((row) => row.id === targetWorkRequiredId);
+    const areaId = group.area_id;
+    const matchesSelection = (row: RemovedSelection, pair: OptionPair) => row.work_required_id === targetWorkRequiredId
+      && row.area_id === areaId
+      && row.subcategory_id === pair.subcategory_id
+      && (row.work_type_id || "") === (pair.work_type_id || "");
+    const removedSelections = group.removedSelections.filter((row) => !nextPairs.some((pair) => matchesSelection(row, pair)));
+    if (line.seeded && areaId && targetWork) {
+      for (const previousPair of removedPairs) {
+        if ((targetWork.work_subcategory_ids || []).includes(previousPair.subcategory_id)
+          && (!previousPair.work_type_id || (targetWork.work_type_ids || []).includes(previousPair.work_type_id))
+          && !removedSelections.some((row) => matchesSelection(row, previousPair))) {
+          removedSelections.push({
+            work_required_id: targetWorkRequiredId,
+            area_id: areaId,
+            subcategory_id: previousPair.subcategory_id,
+            work_type_id: previousPair.work_type_id,
+          });
+        }
+      }
+    }
+
+    return {
+      ...group,
+      removedSelections,
+      lines: group.lines.map((candidate) => candidate.key === lineKey ? {
+        ...candidate,
+        category_id: categoryId,
+        subcategory_id: nextPairs[0].subcategory_id,
+        work_type_id: nextPairs[0].work_type_id,
+        option_pairs: nextPairs.length > 1 ? nextPairs : undefined,
+        measure: nextMeasure,
+        quantity: candidate.manualQuantity
+          ? candidate.quantity
+          : nextMeasured.quantity > 0 ? String(round(nextMeasured.quantity)) : "",
+      } : candidate),
+    };
+  }));
 
   const removeDraftLine = (groupKey: string, lineKey: string) => setGroups((current) => current.map((group) => {
     if (group.key !== groupKey) return group;
@@ -299,7 +343,7 @@ export function CustomerWorkCaptureDialog({
   const editSavedItem = (groupKey: string, item: LineItem) => {
     setGroups((current) => current.map((group) => {
       if (group.key !== groupKey || group.lines.some((line) => line.editOfItemId === item.id)) return group;
-      const measure: WorkMeasureBasis = item.unit_id === "rft" ? "length" : measureFor(item.subcategory_id);
+      const measure: WorkMeasureBasis = item.measurement_basis || (item.unit_id === "rft" ? "length" : measureFor(item.subcategory_id));
       return {
         ...group,
         open: true,
@@ -311,11 +355,11 @@ export function CustomerWorkCaptureDialog({
           option_pairs: item.option_pairs as OptionPair[] | undefined,
           target_work_required_id: item.work_required_id || workRequired.id,
           measure,
-          walls: 1,
+          walls: item.measurement_walls === 2 ? 2 : 1,
           quantity: item.quantity > 0 ? String(item.quantity) : "",
           notes: item.description,
           editOfItemId: item.id,
-          manualQuantity: true,
+          manualQuantity: item.quantity_is_manual ?? true,
         }, ...group.lines],
       };
     }));
@@ -374,69 +418,6 @@ export function CustomerWorkCaptureDialog({
       removedSelections: [...group.removedSelections, ...planned],
       open: true,
     }];
-  }));
-
-  const addAlternative = (groupKey: string, lineKey: string, composite: string) => {
-    const [subcategoryId, workTypeId] = composite.split("::");
-    if (!subcategoryId) return;
-    setGroups((current) => current.map((group) => {
-      if (group.key !== groupKey) return group;
-      return {
-        ...group,
-        lines: group.lines.map((line) => {
-          if (line.key !== lineKey || !line.subcategory_id) return line;
-          const unique = new Map(
-            [...pairsForLine(line), { subcategory_id: subcategoryId, work_type_id: workTypeId || undefined }]
-              .map((pair) => [`${pair.subcategory_id}::${pair.work_type_id || ""}`, pair]),
-          );
-          const optionPairs = [...unique.values()];
-          return { ...line, option_pairs: optionPairs.length > 1 ? optionPairs : undefined };
-        }),
-      };
-    }));
-  };
-
-  const removeAlternative = (groupKey: string, lineKey: string, index: number) => setGroups((current) => current.map((group) => {
-    if (group.key !== groupKey) return group;
-    return {
-      ...group,
-      lines: group.lines.map((line) => {
-        if (line.key !== lineKey) return line;
-        const pairs = pairsForLine(line).filter((_, pairIndex) => pairIndex !== index);
-        if (!pairs.length) return line;
-        const primary = pairs[0];
-        return {
-          ...line,
-          subcategory_id: primary.subcategory_id,
-          work_type_id: primary.work_type_id,
-          measure: measureFor(primary.subcategory_id),
-          option_pairs: pairs.length > 1 ? pairs : undefined,
-        };
-      }),
-    };
-  }));
-
-  const makeAlternativePrimary = (groupKey: string, lineKey: string, index: number) => setGroups((current) => current.map((group) => {
-    if (group.key !== groupKey) return group;
-    return {
-      ...group,
-      lines: group.lines.map((line) => {
-        if (line.key !== lineKey) return line;
-        const pairs = promoteOptionPair(pairsForLine(line), index);
-        const primary = pairs[0];
-        if (!primary) return line;
-        const measure = measureFor(primary.subcategory_id);
-        const measured = measuredQuantity(measure, dimensions(group), line.walls);
-        return {
-          ...line,
-          subcategory_id: primary.subcategory_id,
-          work_type_id: primary.work_type_id,
-          option_pairs: pairs.length > 1 ? pairs : undefined,
-          measure,
-          quantity: line.manualQuantity ? line.quantity : measured.quantity > 0 ? String(round(measured.quantity)) : "",
-        };
-      }),
-    };
   }));
 
   const groupIssue = (group: AreaGroup) => {
@@ -541,6 +522,9 @@ export function CustomerWorkCaptureDialog({
         floor_area: normalized.length && normalized.breadth ? round(normalized.length * normalized.breadth) : undefined,
         quantity: Number(line.quantity) > 0 ? Number(line.quantity) : measured.quantity,
         unit_id: measured.unit,
+        measurement_basis: line.measure,
+        measurement_walls: line.walls,
+        quantity_is_manual: line.manualQuantity,
         notes: line.notes?.trim() || undefined,
       };
     });
@@ -564,79 +548,36 @@ export function CustomerWorkCaptureDialog({
     }
   };
 
-  const labelPair = (pair: OptionPair) => {
-    const subcategory = db.master.workSubcategories.find((row) => row.id === pair.subcategory_id);
-    const workType = pair.work_type_id && subcategory
-      ? workTypesForSubcategory(subcategory).find((row) => row.id === pair.work_type_id)
-      : undefined;
-    return `${subcategory?.name || "Work"}${workType ? ` · ${workType.name}` : ""}`;
-  };
-
-  const availablePlansFor = (group: AreaGroup) => {
-    const areaId = group.area_id || group.key;
-    const drafted = new Set(group.lines.flatMap((line) => pairsForLine(line).map((pair) => `${pair.subcategory_id}::${pair.work_type_id || ""}`)));
-    return seedDetailedAreaLines({
-      siteWorks: siteWorks.map((work) => ({ ...work, area_ids: [areaId] })),
-      workSubcategories: db.master.workSubcategories,
-    }).flatMap((seed) => {
-      const remaining = itemOptionPairs(seed).filter((pair) => pair.subcategory_id && !drafted.has(`${pair.subcategory_id}::${pair.work_type_id || ""}`));
-      if (!remaining.length) return [];
-      return [{
-        ...seed,
-        subcategory_id: remaining[0].subcategory_id!,
-        work_type_id: remaining[0].work_type_id,
-        option_pairs: remaining.length > 1 ? remaining.map((pair) => ({ subcategory_id: pair.subcategory_id!, work_type_id: pair.work_type_id })) : undefined,
-      }];
-    });
-  };
-
-  const addPlannedLine = (groupKey: string, seed: ReturnType<typeof seedDetailedAreaLines>[number]) => setGroups((current) => current.map((group) => {
-    if (group.key !== groupKey) return group;
-    const measured = measuredQuantity(seed.measure, dimensions(group), seed.walls);
-    return {
-      ...group,
-      open: true,
-      lines: [...group.lines, {
-        key: draftKey("scope"),
-        category_id: seed.category_id,
-        subcategory_id: seed.subcategory_id,
-        work_type_id: seed.work_type_id,
-        option_pairs: seed.option_pairs as OptionPair[] | undefined,
-        target_work_required_id: seed.work_required_id,
-        measure: seed.measure,
-        walls: seed.walls,
-        quantity: measured.quantity > 0 ? String(round(measured.quantity)) : "",
-        manualQuantity: false,
-      }],
-    };
-  }));
-
   const renderLine = (group: AreaGroup, line: DraftLine) => {
     const pairs = pairsForLine(line);
-    const selectedPairSubcategoryIds = new Set(pairs.map((pair) => pair.subcategory_id));
-    const selectedPairWorkTypeIds = new Set(pairs.map((pair) => pair.work_type_id).filter(Boolean));
-    const category = db.master.workCategories.find((row) => row.id === line.category_id);
-    const canSelectNewSubcategories = isActiveWorkTaxonomy(category);
-    const subcategories = line.category_id
-      ? db.master.workSubcategories.filter((row) => workSubcategoryCategoryIds(row).includes(line.category_id!)
-        && (row.id === line.subcategory_id || selectedPairSubcategoryIds.has(row.id)
-          || (canSelectNewSubcategories && isActiveWorkTaxonomy(row))))
-      : [];
-    const subcategory = db.master.workSubcategories.find((row) => row.id === line.subcategory_id);
-    const canSelectNewWorkTypes = canSelectNewSubcategories && isActiveWorkTaxonomy(subcategory);
-    const workTypes = workTypesFor(line.subcategory_id).filter((row) => row.id === line.work_type_id
-      || selectedPairWorkTypeIds.has(row.id)
-      || (canSelectNewWorkTypes && isActiveWorkTaxonomy(row)));
-    const pairKeys = new Set(pairs.map((pair) => `${pair.subcategory_id}::${pair.work_type_id || ""}`));
-    const candidateOptions = line.category_id && canSelectNewSubcategories
-      ? db.master.workSubcategories
-          .filter((row) => workSubcategoryCategoryIds(row).includes(line.category_id!) && isActiveWorkTaxonomy(row))
-          .flatMap((subcategory) => workTypesForSubcategory(subcategory).filter(isActiveWorkTaxonomy).map((workType) => ({
-            value: `${subcategory.id}::${workType.id}`,
-            label: `${subcategory.name} · ${workType.name}`,
-          })))
-          .filter((candidate) => !pairKeys.has(candidate.value))
-      : [];
+    const selectedPairKeys = new Set(pairs.map((pair) => `${pair.subcategory_id}::${pair.work_type_id || ""}`));
+    const selectedSubcategoryIds = new Set(pairs.map((pair) => pair.subcategory_id));
+    const selectedCategoryIds = new Set(pairs.flatMap((pair) => {
+      const subcategory = db.master.workSubcategories.find((row) => row.id === pair.subcategory_id);
+      return subcategory ? workSubcategoryCategoryIds(subcategory) : [];
+    }));
+    if (line.category_id) selectedCategoryIds.add(line.category_id);
+    const catalogueHierarchy = db.master.workCategories
+      .filter((category) => isActiveWorkTaxonomy(category) || selectedCategoryIds.has(category.id))
+      .map((category) => ({
+        category,
+        subcategories: db.master.workSubcategories
+          .filter((subcategory) => workSubcategoryCategoryIds(subcategory).includes(category.id)
+            && (isActiveWorkTaxonomy(subcategory) || selectedSubcategoryIds.has(subcategory.id)))
+          .map((subcategory) => ({
+            subcategory,
+            workTypes: workTypesForSubcategory(subcategory).filter((workType) =>
+              isActiveWorkTaxonomy(workType) || selectedPairKeys.has(`${subcategory.id}::${workType.id}`)),
+          })),
+      }))
+      .filter(({ subcategories }) => subcategories.length > 0);
+    const measurementHeadline = pairs.map((pair) => {
+      const subcategory = db.master.workSubcategories.find((row) => row.id === pair.subcategory_id);
+      const workType = pair.work_type_id && subcategory
+        ? workTypesForSubcategory(subcategory).find((row) => row.id === pair.work_type_id)
+        : undefined;
+      return `${subcategory?.name || "Selected work"} > ${workType?.name || "Default"}`;
+    }).join(" / ") || "Selected work";
     const issue = lineIssue(group, line);
     const duplicate = duplicateLineKeys.has(line.key);
     const estimate = lineEstimate(line);
@@ -654,81 +595,65 @@ export function CustomerWorkCaptureDialog({
           <span className="text-[10px] font-semibold uppercase text-muted-foreground">
             {line.editOfItemId ? "Editing captured work" : line.seeded ? "Planned work" : "Work item"}
           </span>
-          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => removeDraftLine(group.key, line.key)} aria-label="Remove draft work item"><X className="h-3.5 w-3.5" /></Button>
+          {line.editOfItemId && <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => removeDraftLine(group.key, line.key)} aria-label="Cancel editing captured work"><X className="h-3.5 w-3.5" /></Button>}
         </div>
 
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <label className="grid gap-1 text-[10px] font-semibold uppercase text-muted-foreground">Category
-            <select value={line.category_id || ""} onChange={(event) => updateLine(group.key, line.key, { category_id: event.target.value || undefined, subcategory_id: undefined, work_type_id: undefined, option_pairs: undefined })} className="h-8 rounded-md border border-input bg-card px-2 text-xs font-normal text-foreground">
-              <option value="">Select category</option>
-              {db.master.workCategories.filter((row) => isActiveWorkTaxonomy(row) || row.id === line.category_id).map((row) => <option key={row.id} value={row.id}>{row.name}{isActiveWorkTaxonomy(row) ? "" : " · Archived"}</option>)}
-            </select>
-          </label>
-          <label className="grid gap-1 text-[10px] font-semibold uppercase text-muted-foreground">Subcategory
-            <select value={line.subcategory_id || ""} disabled={!line.category_id} onChange={(event) => {
-              const subcategoryId = event.target.value || undefined;
-              updateLine(group.key, line.key, {
-                subcategory_id: subcategoryId,
-                work_type_id: subcategoryId ? workTypesFor(subcategoryId)[0]?.id : undefined,
-                option_pairs: undefined,
-                measure: measureFor(subcategoryId),
-              });
-            }} className="h-8 rounded-md border border-input bg-card px-2 text-xs font-normal text-foreground disabled:opacity-60">
-              <option value="">Select subcategory</option>
-              {subcategories.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
-            </select>
-          </label>
-          <label className="grid gap-1 text-[10px] font-semibold uppercase text-muted-foreground">Work type
-            <select value={line.work_type_id || ""} disabled={!line.subcategory_id} onChange={(event) => updateLine(group.key, line.key, { work_type_id: event.target.value || undefined, option_pairs: undefined })} className="h-8 rounded-md border border-input bg-card px-2 text-xs font-normal text-foreground disabled:opacity-60">
-              <option value="">Default</option>
-              {workTypes.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
-            </select>
-          </label>
-          <label className="grid gap-1 text-[10px] font-semibold uppercase text-muted-foreground">Measurement basis
-            <select value={line.measure} onChange={(event) => updateLine(group.key, line.key, { measure: event.target.value as WorkMeasureBasis })} className="h-8 rounded-md border border-input bg-card px-2 text-xs font-normal text-foreground">
-              {MEASURE_OPTIONS.map((basis) => <option key={basis} value={basis}>{WORK_MEASURE_LABELS[basis]}</option>)}
-            </select>
-          </label>
-          {line.measure === "length" && <label className="grid gap-1 text-[10px] font-semibold uppercase text-muted-foreground">Walls
-            <select value={line.walls} onChange={(event) => updateLine(group.key, line.key, { walls: event.target.value === "2" ? 2 : 1 })} className="h-8 rounded-md border border-input bg-card px-2 text-xs font-normal text-foreground"><option value="1">1 wall (L)</option><option value="2">2 walls (L+B)</option></select>
-          </label>}
-          <label className="grid gap-1 text-[10px] font-semibold uppercase text-muted-foreground">{WORK_MEASURE_LABELS[line.measure]}
-            <Input type="number" min="0" step="any" inputMode="decimal" value={line.quantity} onChange={(event) => updateLine(group.key, line.key, { quantity: event.target.value })} className="h-8 text-xs font-normal" placeholder="Auto from Area dimensions" />
-          </label>
-          <label className="grid gap-1 text-[10px] font-semibold uppercase text-muted-foreground sm:col-span-3">Notes
-            <Input value={line.notes || ""} onChange={(event) => updateLine(group.key, line.key, { notes: event.target.value })} className="h-8 text-xs font-normal" placeholder="Finish, preference, openings, deductions or scope note" />
-          </label>
-        </div>
-
-        {pairs.length > 0 && (
-          <div className="mt-2 rounded-md border border-border bg-muted/20 p-2">
-            <p className="text-[10px] font-semibold uppercase text-muted-foreground">Alternatives · customer takes any one · one shared measurement</p>
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
-              {pairs.map((pair, index) => {
-                const rate = rateFor(pair.subcategory_id, pair.work_type_id);
-                const label = labelPair(pair);
-                return <span key={`${pair.subcategory_id}::${pair.work_type_id || ""}`} className={cn("inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]", index === 0 ? "border-success/40 bg-success/10 text-success" : "border-warning/40 bg-warning/10 text-warning")}>
-                  <button type="button" className="text-left" onClick={() => makeAlternativePrimary(group.key, line.key, index)} aria-label={`Make ${label} primary`} aria-pressed={index === 0}>{label}{rate ? ` · ≈ ${formatINR(rate)}/${line.measure === "length" ? "rft" : "sqft"}` : ""}</button>
-                  {pairs.length > 1 && <button type="button" className="rounded p-0.5 text-muted-foreground hover:text-destructive" onClick={() => removeAlternative(group.key, line.key, index)} aria-label={`Remove option ${labelPair(pair)}`}><X className="h-2.5 w-2.5" /></button>}
-                </span>;
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,3fr)_minmax(14rem,2fr)]">
+          <div className="h-40 overflow-y-auto rounded-md border border-border bg-muted/20 p-2.5" aria-label="Work selection from Add/Edit Customer">
+            <div className="flex flex-wrap items-center justify-between gap-1">
+              <p className="text-[10px] font-semibold uppercase text-muted-foreground">Catalogue hierarchy · selected in Add/Edit Customer</p>
+              <p className="text-[10px] font-medium text-primary">Select work type</p>
+            </div>
+            <div className="mt-2 space-y-1" role="tree">
+              {catalogueHierarchy.map(({ category, subcategories }) => {
+                const categoryKey = `${line.key}:category:${category.id}`;
+                const categorySelected = selectedCategoryIds.has(category.id);
+                const categoryOpen = expandedWorkTree[categoryKey] ?? categorySelected;
+                return <div key={category.id} role="treeitem" aria-expanded={categoryOpen} aria-selected={categorySelected}>
+                  <button type="button" onClick={() => toggleWorkTreeNode(categoryKey, categorySelected)} className={cn("flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-xs font-semibold hover:bg-accent", categorySelected ? "text-success" : "text-foreground")}>
+                    <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-primary transition-transform", !categoryOpen && "-rotate-90")} />{category.name}
+                  </button>
+                  {categoryOpen && <div className="ml-2 mt-0.5 space-y-0.5 border-l border-border pl-3" role="group">
+                    {subcategories.map(({ subcategory, workTypes }) => {
+                      const subcategoryKey = `${line.key}:subcategory:${subcategory.id}`;
+                      const subcategorySelected = selectedSubcategoryIds.has(subcategory.id);
+                      const subcategoryOpen = expandedWorkTree[subcategoryKey] ?? subcategorySelected;
+                      const showDefault = selectedPairKeys.has(`${subcategory.id}::`);
+                      return <div key={subcategory.id} role="treeitem" aria-expanded={subcategoryOpen} aria-selected={subcategorySelected}>
+                        <button type="button" onClick={() => toggleWorkTreeNode(subcategoryKey, subcategorySelected)} className={cn("relative flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-[11px] font-medium before:absolute before:-left-3 before:top-1/2 before:w-2 before:border-t before:border-border hover:bg-accent", subcategorySelected ? "text-success" : "text-foreground")}>
+                          <ChevronDown className={cn("h-3 w-3 shrink-0 text-muted-foreground transition-transform", !subcategoryOpen && "-rotate-90")} />{subcategory.name}
+                        </button>
+                        {subcategoryOpen && <div className="ml-2 mt-0.5 space-y-0.5 border-l border-border pl-3" role="group">
+                          {(showDefault || workTypes.length === 0) && <button type="button" role="treeitem" aria-selected={showDefault} disabled={showDefault} onClick={() => changeLineWorkType(group.key, line.key, category.id, subcategory.id)} className={cn("relative flex w-full items-center gap-1.5 rounded py-0.5 text-left text-[11px] before:absolute before:-left-3 before:top-1/2 before:w-2 before:border-t before:border-border", showDefault ? "font-medium text-success" : "text-foreground hover:bg-accent")}>
+                            {showDefault ? <CheckCircle2 className="h-3 w-3" /> : <span className="h-2.5 w-2.5 rounded-full border border-muted-foreground/50" />}Default
+                          </button>}
+                          {workTypes.map((workType) => {
+                            const selected = selectedPairKeys.has(`${subcategory.id}::${workType.id}`);
+                            return <button key={workType.id} type="button" role="treeitem" aria-selected={selected} aria-label={`${selected ? "Selected" : "Change to"} ${subcategory.name} > ${workType.name}`} disabled={selected} onClick={() => changeLineWorkType(group.key, line.key, category.id, subcategory.id, workType.id)} className={cn("relative flex w-full items-center gap-1.5 rounded py-0.5 text-left text-[11px] before:absolute before:-left-3 before:top-1/2 before:w-2 before:border-t before:border-border", selected ? "font-medium text-success" : "text-foreground hover:bg-accent")}>
+                              {selected ? <CheckCircle2 className="h-3 w-3" /> : <span className="h-2.5 w-2.5 rounded-full border border-muted-foreground/50" />}{workType.name}
+                            </button>;
+                          })}
+                        </div>}
+                      </div>;
+                    })}
+                  </div>}
+                </div>;
               })}
             </div>
-            {candidateOptions.length > 0 && <div className="mt-2">
-              <p className="text-[10px] font-semibold uppercase text-muted-foreground">Add another option</p>
-              <div className="mt-1 grid gap-1.5 sm:grid-cols-2">
-                {candidateOptions.map((candidate) => <button
-                  key={candidate.value}
-                  type="button"
-                  aria-label={`Add alternative ${candidate.label}`}
-                  onClick={() => addAlternative(group.key, line.key, candidate.value)}
-                  className="rounded-md border border-warning/30 bg-warning/[0.04] px-2 py-1.5 text-left text-[11px] leading-4 text-foreground hover:bg-warning/10"
-                >
-                  {candidate.label}
-                </button>)}
-              </div>
-            </div>}
           </div>
-        )}
+          <div className="grid content-start gap-3 rounded-md border border-border bg-card p-2.5">
+            <div className="border-b border-border pb-2">
+              <p className="text-[10px] font-semibold uppercase text-muted-foreground">Measurement for</p>
+              <p className="mt-0.5 text-sm font-semibold leading-5 text-foreground">{measurementHeadline}</p>
+            </div>
+            <label className="grid gap-1 text-[10px] font-semibold uppercase text-muted-foreground">{WORK_MEASURE_LABELS[line.measure]}
+              <Input type="number" min="0" step="any" inputMode="decimal" value={line.quantity} onChange={(event) => updateLine(group.key, line.key, { quantity: event.target.value })} className="h-8 text-xs font-normal" placeholder="Auto from Area dimensions" />
+            </label>
+            <label className="grid gap-1 text-[10px] font-semibold uppercase text-muted-foreground">Notes
+              <Input value={line.notes || ""} onChange={(event) => updateLine(group.key, line.key, { notes: event.target.value })} className="h-8 text-xs font-normal" placeholder="Finish, preference, openings, deductions or scope note" />
+            </label>
+          </div>
+        </div>
 
         <p className="mt-2 text-[10px] text-muted-foreground">
           {estimate.rate ? `Live contractor-rate estimate ≈ ${formatINR(estimate.rate)}/${line.measure === "length" ? "rft" : "sqft"} · ${formatINR(estimate.amount)}` : "No contractor rate is available for this work type."}
@@ -750,12 +675,11 @@ export function CustomerWorkCaptureDialog({
         </div>
 
         <div className="rd-scroll max-h-[60vh] space-y-2 overflow-y-auto overflow-x-hidden px-5 py-4">
-          <p className="text-xs text-muted-foreground">Every Site Area reuses one L/B/H source. Each work item chooses its measurement basis; direct quantity overrides dimensions. Alternative work types stay on one measured decision, and valid rows can be saved even while incomplete rows remain untouched.</p>
+          <p className="text-xs text-muted-foreground">Every Site Area reuses one L/B/H source. Choose a work type here or in Add/Edit Customer; saving keeps Customer Edit, Work Execution, and related views in sync. Capture also confirms the calculated quantity and notes.</p>
           <EntityFilesCard entityType="workRequired" entityId={workRequired.id} title="Requirement files" manage allowDetach={false} registerBatch={registerBatch} />
 
           {groups.map((group) => {
             const savedItems = existingItems.filter((item) => item.area_id === group.area_id);
-            const availablePlans = availablePlansFor(group);
             const activeSaved = savedItems.filter((item) => !group.removedItemIds.includes(item.id));
             const issue = groupIssue(group);
             const groupEstimate = group.lines.reduce((sum, line) => sum + lineEstimate(line).amount, 0)
@@ -767,7 +691,6 @@ export function CustomerWorkCaptureDialog({
                     <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", !group.open && "-rotate-90")} />
                     <span className="min-w-0"><span className="block truncate text-sm font-bold">{group.area_name || "New Area"}</span><span className="block text-[10px] text-muted-foreground">{activeSaved.length + group.lines.length} work item(s){groupEstimate ? ` · ≈ ${formatINR(groupEstimate)}` : ""}</span></span>
                   </button>
-                  <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => addLine(group.key)}><Plus className="mr-1 h-3 w-3" />Add work</Button>
                   <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => removeAreaGroup(group.key)} aria-label={`Clear ${group.area_name || "new Area"}`}><Trash2 className="h-3.5 w-3.5" /></Button>
                 </div>
 
@@ -804,18 +727,8 @@ export function CustomerWorkCaptureDialog({
                     })}
                   </div>}
 
-                  {availablePlans.length > 0 && <div className="rounded-md border border-dashed border-primary/30 bg-primary/[0.03] p-2.5">
-                    <p className="text-[10px] font-semibold uppercase text-muted-foreground">Available customer scope · add to this Area</p>
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {availablePlans.map((plan) => {
-                        const label = itemOptionPairs(plan).map((pair) => labelPair({ subcategory_id: pair.subcategory_id!, work_type_id: pair.work_type_id })).join(" / ");
-                        return <Button key={`${plan.work_required_id}:${plan.category_id}:${label}`} size="sm" variant="outline" className="h-auto min-h-7 whitespace-normal px-2 py-1 text-left text-[10px]" aria-label={`Add ${label} to ${group.area_name || "new Area"}`} onClick={() => addPlannedLine(group.key, plan)}><Plus className="mr-1 h-3 w-3 shrink-0" />{label}</Button>;
-                      })}
-                    </div>
-                  </div>}
-
                   <div className="space-y-2">{group.lines.filter((line) => !line.editOfItemId).map((line) => renderLine(group, line))}</div>
-                  {!savedItems.length && !group.lines.length && !availablePlans.length && <p className="rounded-md border border-dashed border-border px-3 py-3 text-xs text-muted-foreground">No customer scope remains for this Area. Use Add work for a new work type.</p>}
+                  {!savedItems.length && !group.lines.length && <p className="rounded-md border border-dashed border-border px-3 py-3 text-xs text-muted-foreground">No work is assigned to this Area. Add the work selection in Add/Edit Customer first.</p>}
                   {issue && <p className="text-[11px] text-destructive">{issue}</p>}
                 </div>}
               </section>

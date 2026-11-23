@@ -218,7 +218,7 @@ export function CommandPalette() {
             const last = t.messages[t.messages.length - 1];
             items.push({ id: `thr-${t.id}`, label: t.title, group: "Threads", groupPriority: GP.threads, iconNode: <MessagesSquare className="h-3.5 w-3.5 text-muted-foreground"/>, action: () => {
                 try { localStorage.setItem("uc-open-thread-id", t.id); } catch { /* non-fatal */ }
-                setActiveModule("unifiedThreadInbox");
+                setActiveModule("conversationInbox");
                 window.dispatchEvent(new CustomEvent("uc:open-thread", { detail: { threadId: t.id } }));
                 setOpen(false);
             }, keywords: `${t.kind} ${last?.body?.slice(0, 80) || ""}`, meta: t.kind });

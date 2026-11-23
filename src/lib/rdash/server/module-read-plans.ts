@@ -54,7 +54,6 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
   approvals: Object.freeze(["customers", "sites", "quotations", "workOrders", "purchaseOrders", "vendorBills", "contractorPayments", "actions", "approvalPolicies", "threads", "entityFileAttachments", "risks", "invoices"]),
   calendarRecurring: Object.freeze(["customers", "sites", "workOrders", "tasks", "recurringTasks", "visits", "payments", "purchaseOrders", "attendance", "entityFileAttachments", "master.vendors", "workRequired", "quotations"]),
   quotationConfig: Object.freeze(["commercialTerms", "paymentTermTemplates", "taxConfigs", "validityConfigs", "master.units", "master.workCategories", "master.workSubcategories", "master.articles", "master.articleVariants", "master.workOptionGroups", "master.workOptionValues", "master.customerRateSuggestions"]),
-  siteMeasurement: Object.freeze(["customers", "sites", "areas", "workRequired", "measurementRevisions", "visits", "entityFileAttachments", "master.units"]),
   visitProofs: Object.freeze(["customers", "sites", "visits", "entityFileAttachments", "master.fileAssets"]),
   fieldMode: Object.freeze(["customers", "sites", "workOrders", "visits", "tasks", "attendance", "entityFileAttachments"]),
   gpsTracking: Object.freeze(["customers", "sites", "visits", "attendance", "entityFileAttachments", "master.vendors"]),

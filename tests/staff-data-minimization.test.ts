@@ -57,7 +57,6 @@ describe("Staff data minimization", () => {
       "blockedRisks",
       "approvals",
       "calendarRecurring",
-      "siteMeasurement",
       "visitProofs",
       "fieldMode",
       "gpsTracking",

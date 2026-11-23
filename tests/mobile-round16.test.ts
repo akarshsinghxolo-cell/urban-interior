@@ -68,9 +68,10 @@ describe("Mobile round 16 — restored Customer Desk", () => {
     expect(capture).toContain("Capture detailed area");
   });
 
-  test("Measurement uses the same Customer-owned mobile Area field semantics", async () => {
-    const measurement = await source("src/components/rdash/customer/CustomerMeasurementDialog.tsx");
-    expect(measurement).toContain("flex items-end justify-center");
-    expect(measurement).toContain("CustomerAreaDimensionsFields");
+  test("the duplicate Measurement sheet is retired in favor of Customer capture", async () => {
+    const capture = await source("src/components/rdash/customer/CustomerWorkCaptureDialog.tsx");
+    expect(await testFile("src/components/rdash/customer/CustomerMeasurementDialog.tsx").exists()).toBe(false);
+    expect(capture).toContain("flex items-end justify-center");
+    expect(capture).toContain("CustomerAreaDimensionsFields");
   });
 });

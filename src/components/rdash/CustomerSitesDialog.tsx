@@ -38,6 +38,7 @@ import {
   type CustomerWorkRequiredDraft,
   type SiteDraft,
 } from "./customer-sites-form-model";
+import { customerDetailedWorkItemIsComplete } from "./customer/CustomerDetailedWorkItemFields";
 
 function scrollToField(id: string) {
   window.requestAnimationFrame(() => {
@@ -87,7 +88,7 @@ export function CustomerSitesDialog({
   const [baseline, setBaseline] = React.useState("");
   const [sameNameAcknowledged, setSameNameAcknowledged] = React.useState(false);
   const defaultCustomerName = titleCaseCustomerName(customer.name);
-  const { registerBatch, commitBatches } = useUploadDraft(open);
+  const { registerBatch, commitBatches, hasPendingBatches } = useUploadDraft(open);
   const formId = `customer-sites:${editId || "new"}`;
   const initializedKeyRef = React.useRef<string | null>(null);
   const previousCustomerNameRef = React.useRef("");
@@ -155,7 +156,7 @@ export function CustomerSitesDialog({
     () => fingerprint(customer, sites, detachAttachmentIds, sameNameAcknowledged, areas, workRequired),
     [areas, customer, sites, detachAttachmentIds, sameNameAcknowledged, workRequired],
   );
-  const dirty = open && currentFingerprint !== baseline;
+  const dirty = open && (currentFingerprint !== baseline || hasPendingBatches);
 
   const updateSite = React.useCallback((siteId: string, patch: Partial<SiteDraft>) => {
     setSites((current) => current.map((site) => site.id === siteId ? { ...site, ...patch } : site));
@@ -241,6 +242,10 @@ export function CustomerSitesDialog({
         toast.error("For each Work Required, select a Category, at least one Subcategory, at least one Work Type, and a title.");
         return false;
       }
+      if (work.structuredItems.some((item) => item.customer_form_draft && !customerDetailedWorkItemIsComplete(item))) {
+        toast.error("Complete or remove every highlighted planned work detail before saving.");
+        return false;
+      }
     }
     return true;
   }, [areas, customer, duplicateMatches, includedLiveSiteIds, sameNameAcknowledged, sameNameMatches.length, sites, updateSite, workRequired]);
@@ -286,7 +291,7 @@ export function CustomerSitesDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && requestClose()}>
-      <DialogContent className="h-[92dvh] max-h-[92dvh] max-w-4xl gap-0 overflow-hidden p-0 sm:h-[min(92dvh,56rem)]">
+      <DialogContent className="h-[92dvh] max-h-[92dvh] gap-0 overflow-hidden p-0 sm:h-[min(92dvh,56rem)] sm:max-w-[calc(100vw-2rem)] xl:max-w-6xl">
         <form className="flex h-full min-h-0 min-w-0 flex-col" onSubmit={(event) => { event.preventDefault(); void saveAndClose(); }}>
           <DialogHeader className="shrink-0 border-b border-border px-5 py-3">
             <DialogTitle className="flex items-center gap-2 text-base">

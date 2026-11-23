@@ -243,9 +243,6 @@ export function createVisitsSlice(ctx: StoreContext): VisitsState {
                     throw new Error(`Vendor ${targetVendor.name} needs verified GPS coordinates before a geofenced Visit can be scheduled.`);
                 }
             }
-            if (v.visit_type === "measurement" && !v.work_required_id) {
-                throw new Error("A Measurement Visit must be linked to the Work Required being measured.");
-            }
             if (v.work_required_id) {
                 const work = state.db.workRequired.find((row: any) => row.id === v.work_required_id);
                 if (!work || work.customer_id !== customerId || work.site_id !== siteId)
@@ -261,7 +258,7 @@ export function createVisitsSlice(ctx: StoreContext): VisitsState {
                     !["cancelled", "completed", "missed"].includes(visit.status)
                 );
                 if (activeMeasurementVisit) {
-                    throw new Error(`An active Measurement Visit already exists for this Work Required (${activeMeasurementVisit.status.replaceAll("_", " ")}). Open Measurements instead of scheduling a duplicate.`);
+                    throw new Error(`An active Measurement Visit already exists for this Work Required (${activeMeasurementVisit.status.replaceAll("_", " ")}). Open Field Visits instead of scheduling a duplicate.`);
                 }
             }
             if (v.work_order_id) {

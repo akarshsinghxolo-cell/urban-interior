@@ -238,11 +238,11 @@ export function normalizeStaffPermissions(input: unknown[] | undefined): StaffPe
 }
 
 const ROUTE_PERMISSION_BY_ID: Record<string, string> = {
-  workdesk: "workspace", today: "workspace", calendarRecurring: "tasks", tasks: "tasks", blockedRisks: "approvals", approvals: "approvals",
+  workdesk: "workspace", today: "workspace", conversationInbox: "media", unifiedThreadInbox: "media", calendarRecurring: "tasks", tasks: "tasks", blockedRisks: "approvals", approvals: "approvals",
   customerDesk: "customers", customerWorkRequired: "customers",
   siteExecution: "sites", siteAreas: "sites", siteWorkRequired: "work", siteContractorBids: "workOrders", siteWorkOrders: "workOrders", boq: "boqs",
   quotationDesk: "quotations", quotationDrafts: "quotations", quotationSent: "quotations", quotationAccepted: "quotations", quotationConfig: "quotations",
-  fieldOperations: "visits", siteMeasurement: "visits", visitProofs: "visits", fieldMode: "visits", gpsTracking: "gps",
+  fieldOperations: "visits", visitProofs: "visits", fieldMode: "visits", gpsTracking: "gps",
   procurementInventory: "procurement", procurement: "procurement", grn: "grns", inventory: "inventory", dispatch: "inventory", vendorBills: "finance",
   financeDesk: "finance", payments: "finance", invoices: "finance", contractorPayments: "finance", workOrderPnl: "finance", gstReturns: "finance",
   mediaCommunication: "media", mediaCatalogues: "media", communicationCentre: "media",

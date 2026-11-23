@@ -186,7 +186,7 @@ describe("work types in the canonical Customer-owned site/work paths", () => {
     expect(read("../src/components/rdash/modules/SiteExecutionModule.tsx")).toContain("CustomerWorkRequiredDialog as WorkRequiredCreateDialog");
   });
 
-  test("Customer capture owns multi-work-type alternatives and contractor-rate estimates", () => {
+  test("Customer capture owns synced work-type changes and contractor-rate estimates", () => {
     const capture = read("../src/components/rdash/customer/CustomerWorkCaptureDialog.tsx");
     const siteExecution = read("../src/components/rdash/modules/SiteExecutionModule.tsx");
 
@@ -194,8 +194,8 @@ describe("work types in the canonical Customer-owned site/work paths", () => {
     expect(capture).toContain("captureStructuredWorkRequired");
     expect(capture).toContain("contractorWorkTypeAverages");
     expect(capture).toContain("option_pairs");
-    expect(capture).toContain("addAlternative");
-    expect(capture).toContain("removeAlternative");
+    expect(capture).toContain("changeLineWorkType");
+    expect(capture).toContain("removedSelections");
     expect(siteExecution).toContain("CustomerWorkCaptureDialog");
     expect(siteExecution).toContain("WorkRequiredCreateDialog");
     expect(siteExecution).not.toContain("captureStructuredWorkRequired");

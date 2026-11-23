@@ -94,6 +94,17 @@ describe("public Google Drive files", () => {
     expectTokens(manager, ["Managed Drive files are link-readable"]);
   });
 
+  test("streams managed files through their selected Drive account without loading the workspace", async () => {
+    const stream = await readFile("src/app/api/google-drive/stream/route.ts", "utf8");
+    const selectedAccountBranch = stream.indexOf("if (storageAccountId)");
+    const directCredentialLookup = stream.indexOf("accessTokenForDriveConnection(storageAccountId)");
+    const legacyWorkspaceFallback = stream.indexOf("getWorkspace()", directCredentialLookup);
+
+    expect(selectedAccountBranch).toBeGreaterThan(-1);
+    expect(directCredentialLookup).toBeGreaterThan(selectedAccountBranch);
+    expect(legacyWorkspaceFallback).toBeGreaterThan(directCredentialLookup);
+  });
+
   test("removes the local-file architecture from active file handling", async () => {
     const files = await readFile("src/lib/rdash/store/slices/files.ts", "utf8");
     const thumbnail = await readFile("src/app/api/google-drive/thumbnail/route.ts", "utf8");

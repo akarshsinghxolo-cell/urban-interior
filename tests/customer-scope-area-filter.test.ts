@@ -20,6 +20,8 @@ describe("Customer Site / Area / Work Required ownership", () => {
     expect(capture).toContain("removedSelections");
     expect(capture).toContain("areaDims");
     expect(capture).toContain("CustomerAreaDimensionsFields");
+    expect(capture).not.toContain("Available customer scope · add to this Area");
+    expect(capture).not.toContain("siteWorks.map((work) => ({ ...work, area_ids: [areaId] }))");
     expect(portfolio).toContain("CustomerWorkCaptureDialog");
     expect(portfolio).not.toContain("captureStructuredWorkRequired");
     expect(portfolio).not.toContain("saveCustomerWithSites");

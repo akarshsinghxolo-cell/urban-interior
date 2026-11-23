@@ -274,6 +274,35 @@ export function measuredQuantity(
 
 // ── Capture-view selection sync ──────────────────────────────────────────────
 
+export type DetailedWorkSelectionPair = { subcategory_id: string; work_type_id?: string };
+
+/** Replace one planned selection, or the whole selection when its category changes. */
+export function replaceDetailedWorkSelection(input: {
+  currentCategoryId?: ID;
+  currentPairs: DetailedWorkSelectionPair[];
+  nextCategoryId: ID;
+  nextSubcategoryId: ID;
+  nextWorkTypeId?: ID;
+}): { changed: boolean; nextPairs: DetailedWorkSelectionPair[]; removedPairs: DetailedWorkSelectionPair[] } {
+  const nextPair = { subcategory_id: input.nextSubcategoryId, work_type_id: input.nextWorkTypeId };
+  const sameCategory = input.currentCategoryId === input.nextCategoryId;
+  const matchingIndex = input.currentPairs.findIndex((pair) => pair.subcategory_id === input.nextSubcategoryId);
+  const replaceIndex = matchingIndex >= 0 ? matchingIndex : 0;
+  const nextPairs = sameCategory && input.currentPairs.length
+    ? input.currentPairs.map((pair, index) => index === replaceIndex ? nextPair : pair)
+    : [nextPair];
+  const changed = input.currentPairs.length !== nextPairs.length
+    || input.currentPairs.some((pair, index) => pair.subcategory_id !== nextPairs[index]?.subcategory_id
+      || (pair.work_type_id || "") !== (nextPairs[index]?.work_type_id || ""));
+  return {
+    changed,
+    nextPairs,
+    removedPairs: changed
+      ? sameCategory && input.currentPairs.length ? [input.currentPairs[replaceIndex]] : input.currentPairs
+      : [],
+  };
+}
+
 /** One planned work line the capture view derives from a Work Required's
  *  ticked selection (not yet measured or captured). One seed per (Work
  *  Required × area): option_pairs carries the row's alternative (subcategory
@@ -284,7 +313,7 @@ export type DetailedSeedLine = {
   category_id?: string;
   subcategory_id: string;
   work_type_id?: string;
-  option_pairs?: Array<{ subcategory_id: string; work_type_id?: string }>;
+  option_pairs?: DetailedWorkSelectionPair[];
   measure: WorkMeasureBasis;
   walls: 1 | 2;
 };
@@ -309,6 +338,11 @@ const scopeKeyOf = (areaId: string | undefined, subcategoryId: string | undefine
 export function itemOptionPairs(item: Pick<LineItem, "subcategory_id" | "work_type_id" | "option_pairs">): Array<{ subcategory_id?: ID; work_type_id?: ID; rate?: number }> {
   if (item.option_pairs?.length) return item.option_pairs;
   return [{ subcategory_id: item.subcategory_id, work_type_id: item.work_type_id }];
+}
+
+/** Captured area rows measured by one selected work type, including alternatives. */
+export function capturedItemsForWorkType(items: LineItem[], workTypeId: ID): LineItem[] {
+  return items.filter((item) => itemOptionPairs(item).some((pair) => pair.work_type_id === workTypeId));
 }
 
 export function promoteOptionPair<T>(pairs: T[], index: number): T[] {

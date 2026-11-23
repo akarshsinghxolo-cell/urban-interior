@@ -182,6 +182,7 @@ describe("Google Drive transaction simplification", () => {
       "Open Drive",
       "% used",
     ]);
+    expectNoTokens(diagnostics, ["Resumable sessions", "resumable-sessions-table", "resumable-sessions-mobile"]);
   });
 
   test("stops stale local upload records instead of retrying missing files forever", async () => {

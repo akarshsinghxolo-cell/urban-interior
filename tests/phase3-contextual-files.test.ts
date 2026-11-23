@@ -38,9 +38,9 @@ describe("Phase 3 contextual files", () => {
   });
 
   test("measurement visit evidence stays owned by the Visit while room revisions keep their own files", async () => {
-    const measurement = await read("src/components/rdash/modules/SiteMeasurementModule.tsx");
+    const visitProofs = await read("src/components/rdash/modules/VisitProofsModule.tsx");
     const detail = await read("src/components/rdash/DetailPanel.tsx");
-    expectTokens(measurement, ['OperationalMediaPanel entityType="visit" entityId={visit.id} title="Measurement visit evidence & references"']);
+    expectTokens(visitProofs, ['OperationalMediaPanel key={visit.id} entityType="visit" entityId={visit.id}']);
     expectTokens(detail, ['entityType="measurement_revision" entityId={revision.id} title="Measurement files" manage={!area.is_archived && revision.id === latest?.id']);
   });
 
@@ -91,8 +91,11 @@ describe("Phase 3 contextual files", () => {
 
   test("site edit language treats uploads as files rather than photos only", async () => {
     const draft = await read("src/components/rdash/CustomerSiteDraftCard.tsx");
+    const picker = await read("src/components/rdash/ManagedFilePicker.tsx");
     expectTokens(draft, ["Site photos and files"]);
+    expectTokens(draft, ['label="Add site photos or videos"', "multiple fileCount"]);
     expectTokens(draft, ['caption: "Site file"']);
+    expect(picker).toContain("attached — tap to add more");
   });
 });
 
@@ -102,6 +105,7 @@ describe("Phase 3 re-audit", () => {
   test("Save/Cancel editors stage direct-file changes while Customer portfolio stays read-only for direct files", async () => {
     const card = await read("src/components/rdash/EntityFilesCard.tsx");
     const customerEditor = await read("src/components/rdash/CustomerSitesDialog.tsx");
+    const uploadDraft = await read("src/lib/uploads/use-upload-draft.ts");
     const customerPortfolio = await read("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
     expect(card).toContain("hiddenAttachmentIds");
     expect(card).toContain("registerBatch?.(queued.batchId)");
@@ -109,6 +113,8 @@ describe("Phase 3 re-audit", () => {
     expect(card).toContain("allowDetach");
     expect(customerEditor).toContain("hiddenAttachmentIds={detachAttachmentIds}");
     expect(customerEditor).toContain("registerBatch={registerBatch}");
+    expectTokens(customerEditor, ["currentFingerprint !== baseline || hasPendingBatches"]);
+    expectTokens(uploadDraft, ["hasPendingBatches: pendingBatchCount > 0"]);
     expectTokens(customerEditor, ["onDetach={(attachmentId) => setDetachAttachmentIds"]);
     expect(customerPortfolio).not.toContain("useUploadDraft(true)");
     expect(customerPortfolio).not.toContain("registerBatch={registerBatch}");
@@ -364,7 +370,6 @@ describe("Phase 3 re-audit", () => {
       "src/components/rdash/modules/GRNModule.tsx",
       "src/components/rdash/modules/FieldModeModule.tsx",
       "src/components/rdash/modules/CommunicationCentreModule.tsx",
-      "src/components/rdash/modules/SiteMeasurementModule.tsx",
       "src/components/rdash/modules/DrawingsExecutionModules.tsx",
     ];
     for (const path of draftFiles) {

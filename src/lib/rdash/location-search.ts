@@ -34,9 +34,14 @@ export function addressCity(address?: Record<string, string>) {
     }
     return "";
 }
-export function addressLocality(address?: Record<string, string>) {
+export function addressLocality(address?: Record<string, string>, displayName?: string) {
+    const city = addressCity(address).trim().toLowerCase();
     for (const key of ["suburb", "neighbourhood", "city_district", "quarter", "residential", "village", "town", "county"]) {
-        if (address?.[key]) return address[key];
+        const value = address?.[key]?.trim();
+        if (value && value.toLowerCase() !== city) return value;
     }
+    const parts = (displayName || "").split(",").map((part) => part.trim()).filter(Boolean);
+    const cityIndex = parts.findIndex((part) => part.toLowerCase() === city);
+    if (cityIndex > 0) return parts[cityIndex - 1];
     return "";
 }

@@ -19,7 +19,6 @@ export type ModuleRenderer =
   | "reports-v2"
   | "report-family"
   | "calendar"
-  | "site-measurement"
   | "approval-policies"
   | "control-brain"
   | "audit-log"
@@ -158,11 +157,20 @@ export const MODULE_GROUPS: ModuleGroup[] = [
         renderer: "daily-work",
         submodules: [
           {
-            id: "unifiedThreadInbox",
+            id: "conversationInbox",
             label: "Conversation Inbox",
             renderer: "unified-thread-inbox",
             dataSource: "threads",
-            hint: "Unified feed of every conversation across all entities",
+            filter: { view: "conversation" },
+            hint: "Human messages and replies across customers, sites and work",
+          },
+          {
+            id: "unifiedThreadInbox",
+            label: "Timeline / History",
+            renderer: "unified-thread-inbox",
+            dataSource: "threads",
+            filter: { view: "timeline" },
+            hint: "Chronological record of messages, decisions, proofs and system events",
           },
           {
             id: "tasks",
@@ -236,12 +244,6 @@ export const MODULE_GROUPS: ModuleGroup[] = [
         renderer: "site-visits",
         dataSource: "visits",
         submodules: [
-          {
-            id: "siteMeasurement",
-            label: "Measurements",
-            renderer: "site-measurement",
-            dataSource: "visits",
-          },
           {
             id: "visitProofs",
             label: "Visit Proofs",

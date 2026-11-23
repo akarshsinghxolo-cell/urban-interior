@@ -53,7 +53,7 @@ export function KeyboardShortcutsHelp() {
         {
             section: "Quick Jump (press G, then a key)",
             items: [
-                { keys: ["G", "I"], label: "Jump to Thread Inbox", icon: <MessageSquare className="h-3.5 w-3.5"/> },
+                { keys: ["G", "I"], label: "Jump to Conversation Inbox", icon: <MessageSquare className="h-3.5 w-3.5"/> },
                 { keys: ["G", "D"], label: "Jump to Daily Work", icon: <Command className="h-3.5 w-3.5"/> },
                 { keys: ["G", "C"], label: "Jump to Customer Desk" },
                 { keys: ["G", "S"], label: "Jump to Sales Pipeline" },
@@ -69,7 +69,7 @@ export function KeyboardShortcutsHelp() {
             ],
         },
         {
-            section: "Thread Inbox & Messages",
+            section: "Conversation Inbox & Messages",
             items: [
                 { keys: ["Ctrl", "↵"], label: "Send reply (in thread composer)", icon: <MessageSquare className="h-3.5 w-3.5"/> },
                 { keys: ["↑", "↓"], label: "Navigate mention autocomplete (when @[ popover is open)" },

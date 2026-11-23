@@ -222,6 +222,9 @@ export interface CrmState {
     article_id?: string; variant_id?: string; quantity: number;
     length_ft?: number; breadth_ft?: number; height_ft?: number; floor_area?: number;
     unit_id?: string; notes?: string;
+    measurement_basis?: import("../work-types").WorkMeasureBasis;
+    measurement_walls?: 1 | 2;
+    quantity_is_manual?: boolean;
     // Detailed-area capture: the requirement this line belongs to (seeded lines
     // carry their source row; fresh lines resolve by category, or create one).
     target_work_required_id?: string;
