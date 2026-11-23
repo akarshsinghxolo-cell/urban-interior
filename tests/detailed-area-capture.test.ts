@@ -21,6 +21,7 @@ describe("canonical Customer site / Area / Work Required workflow", () => {
     expect(fields).not.toContain("Add planned work");
     expect(fields).toContain("Captured measurement for");
     expect(fields).toContain("const missingItems = seeds.flatMap");
+    expect(fields).toContain("md:grid-cols-2 lg:grid-cols-3");
     expect(formModel).toContain("structured_items: draft.structuredItems");
   });
 
