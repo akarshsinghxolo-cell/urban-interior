@@ -137,7 +137,7 @@ function vendorNameSimilarity(left: unknown, right: unknown) {
   return (2 * intersection) / Math.max(1, leftBigrams.size + rightBigrams.size);
 }
 
-function normalizeCapability(raw: VendorSupplyCapability, db: RDashDatabase): VendorSupplyCapability | undefined {
+function normalizeCapability(raw: VendorSupplyCapability, db: RDashDatabase, index: number): VendorSupplyCapability | undefined {
   const article = db.master.articles.find((row) => row.id === raw.article_id);
   if (!article) return undefined;
   const variants = uniqueStrings(raw.variant_ids || []).filter((variantId) =>
@@ -145,7 +145,7 @@ function normalizeCapability(raw: VendorSupplyCapability, db: RDashDatabase): Ve
   );
   const category = article.category_id ? db.master.workCategories.find((row) => row.id === article.category_id) : undefined;
   return {
-    id: compact(raw.id) || `vendor-cap-${article.id}-${compact(raw.brand || "general").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+    id: compact(raw.id) || `vendor-cap-${article.id}-${compact(raw.brand || variants.join("-") || "general").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${index}`,
     article_id: article.id,
     article_name: article.name,
     category_id: article.category_id,
@@ -164,8 +164,29 @@ function normalizeCapability(raw: VendorSupplyCapability, db: RDashDatabase): Ve
 export function canonicalVendorCapabilities(vendor: VendorProfileRecord, db: RDashDatabase): VendorSupplyCapability[] {
   const structured = Array.isArray(vendor.supply_capabilities) ? vendor.supply_capabilities : [];
   return structured
-    .map((row) => normalizeCapability(row, db))
+    .map((row, index) => normalizeCapability(row, db, index))
     .filter((row): row is VendorSupplyCapability => Boolean(row));
+}
+
+export function vendorCapabilityForRate(vendor: VendorProfileRecord, db: RDashDatabase, articleId: string, variantId?: string) {
+  const capabilities = canonicalVendorCapabilities(vendor, db).filter((capability) =>
+    capability.status !== "inactive" && capability.article_id === articleId,
+  );
+  if (variantId) {
+    return capabilities.find((capability) => capability.variant_ids?.includes(variantId))
+      || capabilities.find((capability) => !capability.variant_ids?.length)
+      || capabilities[0];
+  }
+  return capabilities.find((capability) => !capability.variant_ids?.length) || capabilities[0];
+}
+
+export function vendorRateArticleTitle(db: RDashDatabase, rate: Pick<VendorRate, "vendor_id" | "article_id" | "variant_id">) {
+  const article = db.master.articles.find((row) => row.id === rate.article_id);
+  const variant = db.master.articleVariants.find((row) => row.id === rate.variant_id);
+  const vendor = db.master.vendors.find((row) => row.id === rate.vendor_id) as VendorProfileRecord | undefined;
+  const capability = vendor ? vendorCapabilityForRate(vendor, db, rate.article_id, rate.variant_id) : undefined;
+  const brand = variant?.brand || capability?.brand;
+  return `${article?.name || "Unknown Article"}${brand ? ` - ${brand}` : ""}`;
 }
 
 export function normalizeVendorForWrite(input: VendorProfileRecord, db: RDashDatabase, options: { id?: string } = {}): VendorProfileRecord {
@@ -361,11 +382,7 @@ export function computeVendorPerformance(db: RDashDatabase, vendorId: string): V
 }
 
 function capabilityForArticle(vendor: VendorProfileRecord, db: RDashDatabase, articleId: string, variantId?: string) {
-  return canonicalVendorCapabilities(vendor, db).find((capability) =>
-    capability.status !== "inactive" &&
-    capability.article_id === articleId &&
-    (!variantId || !capability.variant_ids?.length || capability.variant_ids.includes(variantId)),
-  );
+  return vendorCapabilityForRate(vendor, db, articleId, variantId);
 }
 
 export function recommendVendorsForArticle(db: RDashDatabase, articleId: string, variantId?: string): VendorRecommendation[] {

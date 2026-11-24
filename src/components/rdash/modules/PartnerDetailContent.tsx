@@ -17,6 +17,7 @@ import { EntityFormDialog } from "../EntityFormDialog";
 import { EntityFilesCard } from "../EntityFilesCard";
 import { Avatar, EmptyState, MetricCard, StatusBadge } from "../primitives";
 import { useActiveTabScroll } from "../use-active-tab-scroll";
+import { articleVariantLabel } from "@/lib/rdash/article-variant-label";
 
 const ProcurementModule = dynamic(() => import("./ProcurementModule").then((module) => module.ProcurementModule));
 const VendorBillsModule = dynamic(() => import("./VendorBillsModule").then((module) => module.VendorBillsModule));
@@ -81,7 +82,14 @@ export function PartnerDetailContent({ kind, id }: { kind: PartnerKind; id: stri
     {section === "capabilities" && <div className="space-y-4"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">{kind === "vendor" ? "Supply capabilities" : "Work capabilities"}</h3><Button size="sm" variant="outline" onClick={() => setEditOpen(true)}><Pencil className="mr-1 h-3.5 w-3.5" />Edit capabilities</Button></div>
       {!model.capabilityCount && <EmptyState title="No capabilities recorded" description="Add the materials supplied or the work this partner can carry out." />}
       {model.contractorCapabilities.map((capability) => <section key={capability.subcategory_id} className="space-y-2 rounded-lg border border-border p-3"><h4 className="text-sm font-semibold">{capability.subcategory_name || "Work category"}</h4>{(capability.work_type_rates || []).map((rate) => <div key={rate.work_type_id} className="rounded-md bg-muted/30 p-3"><p className="text-xs font-medium">{rate.work_type_name}</p><dl className="mt-2 grid grid-cols-3 gap-2 text-xs"><div><dt className="text-muted-foreground">Material</dt><dd>{rate.material_rate != null ? formatINR(rate.material_rate) : "Not quoted"}</dd></div><div><dt className="text-muted-foreground">Labour</dt><dd>{rate.labour_rate != null ? formatINR(rate.labour_rate) : "Not quoted"}</dd></div><div><dt className="text-muted-foreground">Unit</dt><dd>{db.master.units.find((unit) => unit.id === rate.unit_id)?.symbol || rate.unit_id || "Not set"}</dd></div></dl>{rate.notes && <p className="mt-2 text-xs text-muted-foreground">{rate.notes}</p>}</div>)}{!capability.work_type_rates?.length && <p className="text-xs text-muted-foreground">Capability recorded. Add work types and agreed rates in Edit capabilities.</p>}</section>)}
-      {model.vendorCapabilities.map((capability) => <div key={capability.id || capability.article_id} className="rounded-lg border border-border p-3"><div className="flex flex-wrap items-start justify-between gap-2"><p className="text-sm font-semibold">{capability.article_name || "Article"}</p><StatusBadge label={titleCase((capability.availability || "unknown").replaceAll("_", " "))} /></div><p className="mt-1 text-xs text-muted-foreground">{[capability.brand, capability.typical_lead_time_days != null ? `${capability.typical_lead_time_days} days lead time` : "Lead time not recorded", capability.moq != null ? `MOQ ${capability.moq}` : undefined, capability.status === "inactive" ? "Inactive capability" : undefined].filter(Boolean).join(" · ")}</p>{capability.notes && <p className="mt-2 text-xs">{capability.notes}</p>}</div>)}
+      {model.vendorCapabilities.map((capability) => {
+        const variants = (capability.variant_ids || []).flatMap((variantId) => {
+          const variant = db.master.articleVariants.find((row) => row.id === variantId);
+          return variant ? [articleVariantLabel(variant)] : [];
+        });
+        const metadata = [variants.length ? variants.join(", ") : undefined, capability.moq != null ? `MOQ ${capability.moq}` : undefined, capability.status === "inactive" ? "Inactive capability" : undefined].filter(Boolean).join(" · ");
+        return <div key={capability.id || capability.article_id} className="rounded-lg border border-border p-3"><p className="text-sm font-semibold">{capability.article_name || "Article"}{capability.brand ? ` - ${capability.brand}` : ""}</p>{metadata && <p className="mt-1 text-xs text-muted-foreground">{metadata}</p>}{capability.notes && <p className="mt-2 text-xs">{capability.notes}</p>}</div>;
+      })}
       {kind === "vendor" && <VendorPriceMasterModule key={id} vendorId={id} />}
     </div>}
 

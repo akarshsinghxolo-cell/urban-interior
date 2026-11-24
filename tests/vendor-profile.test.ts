@@ -6,8 +6,10 @@ import {
   computeVendorPerformance,
   normalizeVendorForWrite,
   recommendVendorsForArticle,
+  vendorCapabilityForRate,
   vendorDuplicateConflicts,
   vendorQuotedRate,
+  vendorRateArticleTitle,
   type VendorProfileRecord,
 } from "../src/lib/rdash/vendor-profile";
 import { applyVendorRateUpdates } from "../src/lib/rdash/vendor-rate";
@@ -126,6 +128,25 @@ describe("canonical Vendor profile", () => {
       preferred: true,
     });
     expect(canonicalVendorCapabilities({ id: "legacy", name: "Legacy", article_ids: ["art-panel"] } as any, state)).toEqual([]);
+  });
+
+  test("keeps repeated Articles separate and resolves the brand that owns a master Variant", () => {
+    const state = db();
+    const vendor = normalizeVendorForWrite({
+      id: "ven-1",
+      name: "Variant Supplier",
+      supply_capabilities: [
+        { id: "cap-white", article_id: "art-switch", variant_ids: ["var-white"], brand: "Alstone White" },
+        { id: "cap-black", article_id: "art-switch", variant_ids: ["var-black"], brand: "Alstone Black" },
+      ],
+    }, state, { id: "ven-1" });
+
+    expect(vendor.supply_capabilities).toHaveLength(2);
+    expect(vendor.supply_capabilities?.map((capability) => capability.id)).toEqual(["cap-white", "cap-black"]);
+    expect(vendorCapabilityForRate(vendor, state, "art-switch", "var-black")?.brand).toBe("Alstone Black");
+    expect(vendorCapabilityForRate(vendor, state, "art-switch", "var-white")?.brand).toBe("Alstone White");
+    state.master.vendors = [vendor];
+    expect(vendorRateArticleTitle(state, { vendor_id: "ven-1", article_id: "art-switch", variant_id: "var-black" })).toBe("6A Modular Switch - Alstone Black");
   });
 });
 

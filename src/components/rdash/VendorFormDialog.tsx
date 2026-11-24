@@ -38,6 +38,7 @@ import { FilePreview } from "./FilePreview";
 import { CapabilityTaxonomyPicker } from "./CapabilityTaxonomyPicker";
 import { applyVendorRateUpdates, vendorRateUpdatesFromDrafts, type VendorRateDraft } from "@/lib/rdash/vendor-rate";
 import { resolveArticleRateConfig } from "@/lib/rdash/article-rate-config";
+import { articleVariantLabel } from "@/lib/rdash/article-variant-label";
 
 type VendorFormDialogProps = {
   open: boolean;
@@ -47,11 +48,11 @@ type VendorFormDialogProps = {
 };
 
 type CapabilityDraft = {
+  id: string;
   article_id: string;
   variant_ids: string[];
   brand: string;
   availability: VendorAvailability;
-  typical_lead_time_days: string;
   moq: string;
   preferred: boolean;
   notes: string;
@@ -101,12 +102,12 @@ function draftFromRecord(record: VendorProfileRecord): Draft {
   };
 }
 function capabilityDrafts(rows: VendorSupplyCapability[]): CapabilityDraft[] {
-  return rows.map((row) => ({
+  return rows.map((row, index) => ({
+    id: row.id || `vendor-capability-${row.article_id}-${index}`,
     article_id: row.article_id,
     variant_ids: row.variant_ids || [],
     brand: row.brand || "",
     availability: row.availability || "unknown",
-    typical_lead_time_days: row.typical_lead_time_days == null ? "" : String(row.typical_lead_time_days),
     moq: row.moq == null ? "" : String(row.moq),
     preferred: Boolean(row.preferred),
     notes: row.notes || "",
@@ -164,11 +165,11 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     source_partner_id: baselineMetadata.source_partner_id,
     source_partner_name: baselineMetadata.source_partner_name,
     supply_capabilities: capabilities.map((row) => ({
+      id: row.id,
       article_id: row.article_id,
       variant_ids: row.variant_ids,
       brand: row.brand,
       availability: row.availability,
-      typical_lead_time_days: optionalNumber(row.typical_lead_time_days),
       moq: optionalNumber(row.moq),
       preferred: row.preferred,
       notes: row.notes,
@@ -300,12 +301,28 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
   useDirtyFormRegistration({ id: formId, label: `${editId ? "Edit" : "Add"} Vendor`, dirty, save, discard });
   function requestClose() { dirtyFormRegistry.requestNavigation(onClose, { reason: "close this Vendor form" }); }
   function addCapability(articleId: string) {
-    if (capabilities.some((row) => row.article_id === articleId)) return;
-    setCapabilities((current) => [...current, { article_id: articleId, variant_ids: [], brand: "", availability: "unknown", typical_lead_time_days: "", moq: "", preferred: false, notes: "" }]);
+    setCapabilities((current) => [...current, { id: reserveEntityId("vendor-capability"), article_id: articleId, variant_ids: [], brand: "", availability: "unknown", moq: "", preferred: false, notes: "" }]);
     setArticleQuery("");
   }
   function updateCapability(index: number, patch: Partial<CapabilityDraft>) {
     setCapabilities((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row));
+  }
+  function toggleCapabilityVariant(index: number, variantId: string) {
+    setCapabilities((current) => {
+      const selected = current[index];
+      if (!selected) return current;
+      const removing = selected.variant_ids.includes(variantId);
+      return current.map((row, rowIndex) => {
+        if (row.article_id !== selected.article_id) return row;
+        if (rowIndex === index) return {
+          ...row,
+          variant_ids: removing ? row.variant_ids.filter((id) => id !== variantId) : [...row.variant_ids, variantId],
+        };
+        return removing || !row.variant_ids.includes(variantId)
+          ? row
+          : { ...row, variant_ids: row.variant_ids.filter((id) => id !== variantId) };
+      });
+    });
   }
 
   function toggleTaxonomyCategory(categoryId: string) {
@@ -334,10 +351,9 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     return vendorArticlesForTaxonomy(db.master, {
       selectedCategoryIds: taxonomyCategoryIds,
       selectedSubcategoryIds: taxonomySubcategoryIds,
-      excludedArticleIds: capabilities.map((row) => row.article_id),
       query: articleQuery,
     });
-  }, [articleQuery, capabilities, db.master, taxonomyCategoryIds, taxonomySubcategoryIds]);
+  }, [articleQuery, db.master, taxonomyCategoryIds, taxonomySubcategoryIds]);
   const businessFile = mediaFile(businessCard, db);
   const shopFile = mediaFile(shopPhoto, db);
 
@@ -349,7 +365,7 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     <section className="min-w-0 rounded-xl border border-border bg-muted/10 p-4">
       <div>
         <h3 className="text-sm font-bold">Supply capability</h3>
-        <p className="text-[10px] text-muted-foreground">Category → Subcategory → Article → optional Variants → brand → availability / lead time / MOQ.</p>
+        <p className="text-[10px] text-muted-foreground">Category → Subcategory → Article → optional master Variants → brand → availability / MOQ. Add the same Article again for another brand or Variant.</p>
       </div>
 
       <div className="mt-3">
@@ -385,7 +401,7 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
           </div>
         )}
         {filteredArticles.length === 0 && (
-          <p className="mt-1 text-[10px] text-muted-foreground">No more Articles match these filters. Clear the search or category selections to browse all Articles.</p>
+          <p className="mt-1 text-[10px] text-muted-foreground">No Articles match these filters. Clear the search or category selections to browse all Articles.</p>
         )}
       </div>
 
@@ -395,31 +411,31 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
           const taxonomy = vendorArticleTaxonomyLabels(db.master, row.article_id);
           const variants = db.master.articleVariants.filter((variant) => variant.article_id === row.article_id && variant.enabled !== false);
           return (
-            <div key={row.article_id} className="rounded-xl border border-border bg-background p-3">
+            <div key={row.id} className="rounded-xl border border-border bg-background p-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 break-words"><p className="text-sm font-bold">{article?.name || row.article_id}</p><p className="text-[10px] text-muted-foreground">{taxonomy.categoryName}{taxonomy.subcategoryNames.length ? ` → ${taxonomy.subcategoryNames.join(", ")}` : ""}</p></div>
-                <Button type="button" size="icon" variant="ghost" className="h-8 w-8 shrink-0 text-destructive" onClick={() => setCapabilities((current) => current.filter((_, rowIndex) => rowIndex !== index))}><Trash2 className="h-3.5 w-3.5" /></Button>
+                <Button type="button" size="icon" variant="ghost" className="h-8 w-8 shrink-0 text-destructive" aria-label={`Remove ${article?.name || "Article"} capability`} onClick={() => setCapabilities((current) => current.filter((_, rowIndex) => rowIndex !== index))}><Trash2 className="h-3.5 w-3.5" /></Button>
               </div>
-              <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2">
                 <Field label="Brand"><Input value={row.brand} onChange={(event) => updateCapability(index, { brand: event.target.value })} /></Field>
                 <Field label="Availability"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={row.availability} onChange={(event) => updateCapability(index, { availability: event.target.value as VendorAvailability })}><option value="unknown">Unknown</option><option value="in_stock">In stock</option><option value="limited">Limited</option><option value="on_order">On order</option></select></Field>
-                <Field label="Typical lead days"><Input type="number" min="0" value={row.typical_lead_time_days} onChange={(event) => updateCapability(index, { typical_lead_time_days: event.target.value })} /></Field>
                 <Field label="MOQ"><Input type="number" min="0" value={row.moq} onChange={(event) => updateCapability(index, { moq: event.target.value })} /></Field>
                 <label className="flex h-9 items-center gap-2 self-end rounded-md border border-input px-3 text-xs"><input type="checkbox" checked={row.preferred} onChange={(event) => updateCapability(index, { preferred: event.target.checked })} /><Star className={cn("h-3.5 w-3.5", row.preferred && "fill-warning text-warning")} />Preferred</label>
               </div>
-              {variants.length > 0 && <div className="mt-3"><p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Variants supplied</p><div className="flex flex-wrap gap-1.5">{variants.map((variant) => { const active = row.variant_ids.includes(variant.id); return <button key={variant.id} type="button" onClick={() => updateCapability(index, { variant_ids: active ? row.variant_ids.filter((id) => id !== variant.id) : [...row.variant_ids, variant.id] })} className={cn("rounded-full border px-2.5 py-1 text-[10px] font-medium", active ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-muted")}>{variant.name}</button>; })}</div></div>}
+              <div className="mt-3"><p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Master variants supplied</p>{variants.length ? <div className="flex flex-wrap gap-1.5">{variants.map((variant) => { const active = row.variant_ids.includes(variant.id); const assignedElsewhere = capabilities.some((capability, capabilityIndex) => capabilityIndex !== index && capability.article_id === row.article_id && capability.variant_ids.includes(variant.id)); return <button key={variant.id} type="button" aria-pressed={active} onClick={() => toggleCapabilityVariant(index, variant.id)} className={cn("rounded-full border px-2.5 py-1 text-[10px] font-medium", active ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-muted", assignedElsewhere && "border-dashed")} title={assignedElsewhere ? "Selecting this moves the Variant to this brand entry." : undefined}>{articleVariantLabel(variant)}</button>; })}</div> : <p className="text-[10px] text-muted-foreground">No master Variants exist for this Article yet. Create priceable brand, colour, or specification options in Master Setup → Article Variants.</p>}</div>
               <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {[undefined, ...row.variant_ids].map((variantId) => {
+                {(capabilities.findIndex((capability) => capability.article_id === row.article_id) === index ? [undefined, ...row.variant_ids] : row.variant_ids).map((variantId) => {
                   const key = JSON.stringify([row.article_id, variantId || ""]);
                   const stored = db.master.vendorRates.find((rate) => rate.vendor_id === (editId || reservedId) && rate.article_id === row.article_id && (rate.variant_id || "") === (variantId || ""));
                   const config = resolveArticleRateConfig({ articleId: row.article_id, variantId, articles: db.master.articles, variants: db.master.articleVariants });
                   const unit = db.master.units.find((unit) => unit.id === config.rateUnit);
                   const variant = variants.find((variant) => variant.id === variantId);
-                  return <Field key={key} label={`${variant?.name || "Article"} price (₹)`} hint={`Per ${unit?.symbol || config.rateUnit || "unit not configured"}${stored?.status === "inactive" ? " · Inactive rate — activate in Price Matrix" : ""}`}>
+                  return <Field key={key} label={`${variant ? articleVariantLabel(variant) : "Article"} price (₹)`} hint={`Per ${unit?.symbol || config.rateUnit || "unit not configured"}${stored?.status === "inactive" ? " · Inactive rate — activate in Price Matrix" : ""}`}>
                     <Input type="number" min="0.01" step="0.01" inputMode="decimal" placeholder="Not quoted" value={priceEdits[key]?.value ?? (stored ? String(stored.quoted_rate) : "")} onChange={(event) => setPriceEdits((current) => ({ ...current, [key]: { articleId: row.article_id, variantId, value: event.target.value } }))} />
                   </Field>;
                 })}
               </div>
+              {capabilities.findIndex((capability) => capability.article_id === row.article_id) !== index && row.variant_ids.length === 0 && <p className="mt-3 rounded-md border border-dashed border-border p-2 text-[10px] text-muted-foreground">Select a master Variant above to keep this brand or colour price separate from the base Article price.</p>}
               <p className="mt-2 text-[10px] text-muted-foreground">Prices and history are shared with the Vendor Price Matrix. Removing a capability does not delete its saved prices.</p>
               <div className="mt-3"><Field label="Capability notes"><Input value={row.notes} onChange={(event) => updateCapability(index, { notes: event.target.value })} /></Field></div>
             </div>
